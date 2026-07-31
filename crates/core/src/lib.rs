@@ -19,3 +19,6 @@ pub use crypto::{CryptoError, bundle_fp, device_id, join_sig_msg, room_id};
 pub use crypto::{
     Ed25519Keypair, Identity, SessionKey, SessionKeys, X25519Keypair, aad, open, sas_code, seal,
 };
+
+#[cfg(feature = "full")]
+pub mod history;

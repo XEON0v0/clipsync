@@ -1,0 +1,7 @@
+{
+  "type": "pair_peer",
+  "peer_pub_bundle": {
+    "sign_pk_b64": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
+    "dh_pk_b64": "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE="
+  }
+}

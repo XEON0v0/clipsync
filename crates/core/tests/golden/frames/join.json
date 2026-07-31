@@ -1,0 +1,10 @@
+{
+  "type": "join",
+  "room_id": "00112233445566778899aabbccddeeff",
+  "device_id": "0123456789abcdef",
+  "pub_bundle": {
+    "sign_pk_b64": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
+    "dh_pk_b64": "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE="
+  },
+  "sig_b64": "c2lnbmF0dXJl"
+}

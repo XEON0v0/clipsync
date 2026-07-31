@@ -1,0 +1,8 @@
+{
+  "type": "pair_claim",
+  "code": "ABC123",
+  "pub_bundle": {
+    "sign_pk_b64": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
+    "dh_pk_b64": "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE="
+  }
+}

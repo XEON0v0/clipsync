@@ -1,0 +1,7 @@
+{
+  "type": "clip",
+  "room_id": "00112233445566778899aabbccddeeff",
+  "ciphertext_b64": "Y2lwaGVydGV4dA==",
+  "origin_device": "fedcba9876543210",
+  "mailbox": true
+}

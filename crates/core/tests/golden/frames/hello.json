@@ -1,0 +1,9 @@
+{
+  "type": "hello",
+  "device_id": "0123456789abcdef",
+  "pub_bundle": {
+    "sign_pk_b64": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
+    "dh_pk_b64": "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE="
+  },
+  "version": 1
+}

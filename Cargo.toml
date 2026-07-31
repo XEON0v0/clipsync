@@ -1,0 +1,32 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/core",
+    "crates/server",
+    "tools/uniffi-bindgen",
+]
+
+[workspace.package]
+edition = "2024"
+rust-version = "1.90"
+license = "MIT OR Apache-2.0"
+
+[workspace.dependencies]
+axum = { version = "=0.8.6" }
+base64 = { version = "=0.22.1" }
+chacha20poly1305 = { version = "=0.10.1" }
+ed25519-dalek = { version = "=2.2.0", features = ["serde"] }
+hkdf = { version = "=0.12.4" }
+image = { version = "=0.25.9", default-features = false, features = ["png"] }
+qrcode = { version = "=0.14.1" }
+rand = { version = "=0.8.5" }
+rustls = { version = "=0.23.38" }
+serde = { version = "=1.0.228", features = ["derive"] }
+serde_json = { version = "=1.0.149" }
+sha2 = { version = "=0.10.9" }
+thiserror = { version = "=2.0.18" }
+tokio = { version = "=1.52.1", features = ["macros", "net", "rt-multi-thread", "sync", "time"] }
+tokio-tungstenite = { version = "=0.28.0", default-features = false, features = ["connect", "rustls-tls-webpki-roots"] }
+uniffi = { version = "=0.29.4", features = ["cli"] }
+uuid = { version = "=1.18.1", features = ["serde", "v4"] }
+x25519-dalek = { version = "=2.0.1" }

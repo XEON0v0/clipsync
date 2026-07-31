@@ -1,0 +1,43 @@
+[package]
+name = "clipboard-core"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[features]
+default = []
+verify = ["dep:sha2", "dep:ed25519-dalek"]
+full = [
+    "verify",
+    "dep:x25519-dalek",
+    "dep:hkdf",
+    "dep:chacha20poly1305",
+    "dep:rand",
+    "dep:uuid",
+    "dep:qrcode",
+    "dep:image",
+    "dep:tokio",
+    "dep:tokio-tungstenite",
+    "dep:rustls",
+    "dep:uniffi",
+]
+
+[dependencies]
+base64.workspace = true
+chacha20poly1305 = { workspace = true, optional = true }
+ed25519-dalek = { workspace = true, optional = true }
+hkdf = { workspace = true, optional = true }
+image = { workspace = true, optional = true }
+qrcode = { workspace = true, optional = true }
+rand = { workspace = true, optional = true }
+rustls = { workspace = true, optional = true }
+serde.workspace = true
+serde_json.workspace = true
+sha2 = { workspace = true, optional = true }
+thiserror.workspace = true
+tokio = { workspace = true, optional = true }
+tokio-tungstenite = { workspace = true, optional = true }
+uniffi = { workspace = true, optional = true }
+uuid = { workspace = true, optional = true }
+x25519-dalek = { workspace = true, optional = true }

@@ -29,4 +29,4 @@ tokio = { version = "=1.52.1", features = ["macros", "net", "rt-multi-thread", "
 tokio-tungstenite = { version = "=0.28.0", default-features = false, features = ["connect", "rustls-tls-webpki-roots"] }
 uniffi = { version = "=0.29.4", features = ["cli"] }
 uuid = { version = "=1.18.1", features = ["serde", "v4"] }
-x25519-dalek = { version = "=2.0.1" }
+x25519-dalek = { version = "=2.0.1", features = ["static_secrets"] }

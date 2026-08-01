@@ -6,6 +6,7 @@ use common::*;
 
 use clipboard_core::protocol::Frame;
 use ed25519_dalek::Signer;
+use std::time::{Duration, Instant};
 
 #[tokio::test]
 async fn two_clients_route_clip_with_origin_overwritten() {
@@ -19,6 +20,7 @@ async fn two_clients_route_clip_with_origin_overwritten() {
     let mut bob_conn = Client::connect(server.addr).await;
     bob_conn.join_live(&bob, &room).await;
 
+    let started = Instant::now();
     alice_conn
         .send(&Client::clip_frame(&room, &b64(b"encrypted-payload")))
         .await;
@@ -40,6 +42,11 @@ async fn two_clients_route_clip_with_origin_overwritten() {
         }
         other => panic!("expected clip, got {other:?}"),
     }
+    assert!(
+        started.elapsed() < Duration::from_millis(50),
+        "in-process live route exceeded 50ms: {:?}",
+        started.elapsed()
+    );
 }
 
 #[tokio::test]

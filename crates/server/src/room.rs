@@ -26,6 +26,7 @@ use clipboard_core::protocol::{Frame, encode_frame};
 
 use crate::config::{Limits, TestHooks};
 use crate::mailbox::{MailboxSink, PendingClip};
+use crate::registry::Registry;
 
 /// Unique id of one websocket connection for its whole lifetime.
 pub type ConnectionId = u64;
@@ -207,6 +208,7 @@ struct RoomsInner {
     map: DashMap<String, RoomHandle>,
     limits: Limits,
     mailbox: Arc<dyn MailboxSink>,
+    registry: Arc<dyn Registry>,
     hooks: TestHooks,
 }
 
@@ -218,12 +220,18 @@ pub struct Rooms {
 
 impl Rooms {
     #[must_use]
-    pub fn new(limits: Limits, mailbox: Arc<dyn MailboxSink>, hooks: TestHooks) -> Self {
+    pub fn new(
+        limits: Limits,
+        mailbox: Arc<dyn MailboxSink>,
+        registry: Arc<dyn Registry>,
+        hooks: TestHooks,
+    ) -> Self {
         Self {
             inner: Arc::new(RoomsInner {
                 map: DashMap::new(),
                 limits,
                 mailbox,
+                registry,
                 hooks,
             }),
         }
@@ -328,6 +336,7 @@ impl Rooms {
                 .into_iter()
                 .collect(),
             mailbox: self.inner.mailbox.clone(),
+            registry: self.inner.registry.clone(),
             hooks: self.inner.hooks.clone(),
             pending_bytes: handle.pending_bytes.clone(),
         };
@@ -349,6 +358,7 @@ struct RoomActor {
     /// In-memory mailbox keyed by recipient fingerprint; latest wins.
     mailbox_pending: HashMap<String, PendingClip>,
     mailbox: Arc<dyn MailboxSink>,
+    registry: Arc<dyn Registry>,
     hooks: TestHooks,
     pending_bytes: Arc<AtomicUsize>,
 }
@@ -428,12 +438,13 @@ impl RoomActor {
             return; // fresh outbox violated its bounds; leave the member unregistered
         }
         self.online.insert(
-            fp,
+            fp.clone(),
             OnlineMember {
                 connection_id,
                 outbox,
             },
         );
+        self.registry.activate_on_first_join(&self.room_id, &fp);
     }
 
     fn on_clip(&mut self, sender_fp: &str, connection_id: ConnectionId, ciphertext_b64: String) {

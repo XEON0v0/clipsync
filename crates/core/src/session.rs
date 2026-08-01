@@ -58,6 +58,8 @@ pub const SEEN_IDS_RING: usize = 64;
 pub const LIVE_FRESH_WINDOW_MS: i64 = 5 * 60 * 1000;
 /// Future clock skew tolerated on the live freshness window.
 pub const LIVE_FUTURE_SKEW_MS: i64 = 2 * 60 * 1000;
+/// Maximum encoded image payload accepted from a platform shell.
+pub const MAX_IMAGE_BYTES: usize = 10 * 1024 * 1024;
 /// In-memory echo hash ring shared by sent and applied text clips.
 const ECHO_RING: usize = 64;
 const SESSION_FILE: &str = "session.json";
@@ -269,6 +271,8 @@ pub enum ReceiveStage {
     PendingCleared,
     /// After `on_mailbox_clip` returned `Applied`, before `set_source(Remote)`.
     MailboxApplied,
+    /// After `set_source(Remote)` was persisted, before returning success.
+    SourcePromoted,
 }
 
 /// One end-to-end encrypted clipboard session with a single paired peer.
@@ -395,6 +399,15 @@ impl Session {
         ts_ms: i64,
         fail_at: Option<SendStage>,
     ) -> Result<Frame, SessionError> {
+        if let ClipContent::Image(bytes) = &content
+            && bytes.len() > MAX_IMAGE_BYTES
+        {
+            return Err(ProtocolError::Oversize {
+                size: bytes.len(),
+                limit: MAX_IMAGE_BYTES,
+            }
+            .into());
+        }
         let seq = self.send_state.next_seq;
         let mut reserved = self.send_state.clone();
         reserved.next_seq = seq.checked_add(1).ok_or(SessionError::RecordMismatch)?;
@@ -554,6 +567,9 @@ impl Session {
                         return Err(SessionError::InjectedFault);
                     }
                     self.history.set_source(item.id, HistorySource::Remote)?;
+                    if fail_at == Some(ReceiveStage::SourcePromoted) {
+                        return Err(SessionError::InjectedFault);
+                    }
                     if let ClipContent::Text(text) = &item.content {
                         self.register_echo(&text_hash(text));
                     }

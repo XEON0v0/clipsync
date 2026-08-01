@@ -41,7 +41,10 @@ impl InMemoryRegistry {
 
     /// Registers a room with its full member set. Test/pairing-seam helper; T8's
     /// disk implementation owns production registration via the pairing flow.
-    pub fn register_room(&self, room_id: &str, members: &[String]) {
+    pub fn register_room(&self, room_id: &str, members: &[String]) -> bool {
+        if members.len() != 2 || members[0] == members[1] {
+            return false;
+        }
         self.rooms.lock().expect("registry mutex poisoned").insert(
             room_id.to_owned(),
             RoomRecord {
@@ -49,6 +52,7 @@ impl InMemoryRegistry {
                 activated: HashSet::new(),
             },
         );
+        true
     }
 
     /// Returns the members that activated so far. Test helper.
@@ -100,11 +104,22 @@ mod tests {
         let registry = InMemoryRegistry::new();
         let room_id = "cd".repeat(16);
         let members = vec!["aa".repeat(32), "bb".repeat(32)];
-        registry.register_room(&room_id, &members);
+        assert!(registry.register_room(&room_id, &members));
         assert_eq!(registry.lookup_members(&room_id), members);
         assert!(registry.activated(&room_id).is_empty());
         registry.activate_on_first_join(&room_id, &members[0]);
         registry.activate_on_first_join(&room_id, &members[0]);
         assert_eq!(registry.activated(&room_id), vec![members[0].clone()]);
+    }
+
+    #[test]
+    fn register_room_rejects_non_binary_or_duplicate_membership() {
+        let registry = InMemoryRegistry::new();
+        let room_id = "ef".repeat(16);
+        let member = "aa".repeat(32);
+        assert!(!registry.register_room(&room_id, &[]));
+        assert!(!registry.register_room(&room_id, std::slice::from_ref(&member)));
+        assert!(!registry.register_room(&room_id, &[member.clone(), member]));
+        assert!(registry.lookup_members(&room_id).is_empty());
     }
 }

@@ -9,13 +9,17 @@ use rand::{Rng, RngCore, rngs::OsRng};
 use thiserror::Error;
 use tokio::net::TcpStream;
 use tokio_tungstenite::tungstenite::Message;
-use tokio_tungstenite::{MaybeTlsStream, WebSocketStream, connect_async};
+use tokio_tungstenite::tungstenite::protocol::WebSocketConfig;
+use tokio_tungstenite::{MaybeTlsStream, WebSocketStream, connect_async_with_config};
 
 use crate::crypto::{Identity, bundle_bytes, join_sig_msg};
 use crate::pairing::{
     Claimer, Offerer, PairingError, PairingRecord, PairingStore, PendingConfirmation, QrPayload,
 };
-use crate::protocol::{Frame, PROTOCOL_VERSION, ProtocolError, decode_frame, encode_frame};
+use crate::protocol::{
+    Frame, MAX_FRAME_BYTES, MAX_MESSAGE_BYTES, PROTOCOL_VERSION, ProtocolError, decode_frame,
+    encode_frame,
+};
 
 /// Six-character alphabet without visually ambiguous characters.
 pub const PAIRING_CODE_ALPHABET: &[u8; 30] = b"23456789ABCDEFGHJKMNPQRSTVWXYZ";
@@ -51,7 +55,10 @@ impl PairingClient {
     /// Connects to a relay and completes `hello -> hello_ok`.
     pub async fn connect(store: &PairingStore, server: &str) -> Result<Self, TransportError> {
         let identity = store.load_identity()?;
-        let (mut socket, _) = connect_async(server).await.map_err(websocket_error)?;
+        let (mut socket, _) =
+            connect_async_with_config(server, Some(relay_websocket_config()), false)
+                .await
+                .map_err(websocket_error)?;
         send_frame(
             &mut socket,
             &Frame::Hello {
@@ -145,6 +152,12 @@ impl PairingClient {
     }
 }
 
+fn relay_websocket_config() -> WebSocketConfig {
+    WebSocketConfig::default()
+        .max_frame_size(Some(MAX_FRAME_BYTES))
+        .max_message_size(Some(MAX_MESSAGE_BYTES))
+}
+
 /// Published offer waiting for the peer bundle.
 pub struct PairingOffer {
     qr: QrPayload,
@@ -225,6 +238,15 @@ pub struct LiveLink {
     bootstrap_clip: Option<(String, String)>,
 }
 
+/// Event produced by the resilient receive path.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum LiveEvent {
+    Frame(Frame),
+    Reconnected {
+        bootstrap_clip: Option<(String, String)>,
+    },
+}
+
 impl fmt::Debug for LiveLink {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter
@@ -261,6 +283,44 @@ impl LiveLink {
             frame @ Frame::Clip { mailbox: false, .. } => Ok(frame),
             Frame::Error { code, message } => Err(TransportError::Server { code, message }),
             frame => Err(unexpected("live clip", &frame)),
+        }
+    }
+
+    /// Receives a live frame, automatically rejoining after transport closure.
+    /// Reconnect failures use the protocol's 1s-to-30s jittered backoff and the
+    /// successful join's bootstrap is surfaced exactly once to the caller.
+    pub async fn recv_reconnecting(
+        &mut self,
+        store: &PairingStore,
+    ) -> Result<LiveEvent, TransportError> {
+        match self.recv().await {
+            Ok(frame) => Ok(LiveEvent::Frame(frame)),
+            Err(TransportError::Closed | TransportError::WebSocket(_)) => {
+                self.reconnect(store).await?;
+                Ok(LiveEvent::Reconnected {
+                    bootstrap_clip: self.bootstrap_clip(),
+                })
+            }
+            Err(error) => Err(error),
+        }
+    }
+
+    /// Replaces this link with a freshly joined connection, retrying only
+    /// transient WebSocket failures. Authentication/protocol failures fail closed.
+    pub async fn reconnect(&mut self, store: &PairingStore) -> Result<(), TransportError> {
+        let mut attempt = 0;
+        loop {
+            match PairingClient::join(store).await {
+                Ok(link) => {
+                    *self = link;
+                    return Ok(());
+                }
+                Err(TransportError::Closed | TransportError::WebSocket(_)) => {
+                    tokio::time::sleep(backoff_delay(attempt)).await;
+                    attempt = attempt.saturating_add(1);
+                }
+                Err(error) => return Err(error),
+            }
         }
     }
 
@@ -387,4 +447,16 @@ pub fn backoff_delay_with_jitter(attempt: u32, jitter: f64) -> Duration {
     let seconds = 2_u64.saturating_pow(attempt.min(31)).min(30);
     let factor = 1.0 + jitter.clamp(-0.2, 0.2);
     Duration::from_millis(((seconds as f64) * 1000.0 * factor).round() as u64)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn relay_websocket_uses_protocol_frame_and_message_limits() {
+        let config = relay_websocket_config();
+        assert_eq!(config.max_frame_size, Some(MAX_FRAME_BYTES));
+        assert_eq!(config.max_message_size, Some(MAX_MESSAGE_BYTES));
+    }
 }

@@ -50,7 +50,12 @@ impl ServerState {
         Self {
             rate_limits: IpRateLimiter::new(&config.limits),
             connection_permits: Arc::new(Semaphore::new(config.limits.max_connections)),
-            rooms: Rooms::new(config.limits.clone(), mailbox, config.hooks.clone()),
+            rooms: Rooms::new(
+                config.limits.clone(),
+                mailbox,
+                registry.clone(),
+                config.hooks.clone(),
+            ),
             config,
             registry,
             pairing,

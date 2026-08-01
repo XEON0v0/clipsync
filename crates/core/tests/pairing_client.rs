@@ -408,6 +408,37 @@ async fn pairing_offline_clip_arrives_once_as_mailbox_bootstrap_after_rejoin() {
     );
 }
 
+#[tokio::test]
+async fn pairing_live_link_can_replace_itself_with_a_fresh_join() {
+    let server = FakeServer::start().await.expect("fake server");
+    let offerer = Endpoint::new();
+    let claimer = Endpoint::new();
+    let (channel_a, channel_b) = pair_to_channels(&server, &offerer, &claimer).await;
+    let sas = channel_a.pending().sas();
+    let (link_a, link_b) = tokio::join!(
+        channel_a.confirm_pair(&sas, &offerer.store),
+        channel_b.confirm_pair(&sas, &claimer.store),
+    );
+    let _link_a = link_a.expect("offerer confirm");
+    let mut link_b = link_b.expect("claimer confirm");
+
+    link_b
+        .reconnect(&claimer.store)
+        .await
+        .expect("fresh join should replace the link");
+
+    assert_eq!(
+        link_b.record().room_id,
+        claimer
+            .store
+            .load_pairing()
+            .expect("pairing load")
+            .expect("pairing exists")
+            .room_id
+    );
+    assert!(link_b.bootstrap_clip().is_none());
+}
+
 #[test]
 fn pairing_backoff_attempt_zero_stays_within_plus_minus_twenty_percent() {
     // Given / When

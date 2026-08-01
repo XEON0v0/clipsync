@@ -8,7 +8,7 @@ use base64::{Engine as _, engine::general_purpose::STANDARD};
 use clipboard_core::crypto::Identity;
 use clipboard_core::history::{HistoryItem, HistorySource, HistoryStore};
 use clipboard_core::pairing::{Claimer, Offerer, PairingRecord, PairingStore, QrPayload};
-use clipboard_core::protocol::{Frame, decode_frame, encode_frame};
+use clipboard_core::protocol::{Frame, ProtocolError, decode_frame, encode_frame};
 use clipboard_core::session::{
     CallbackError, ClipContent, ClipItem, InboundOutcome, MailboxDisposition, ReceiveStage,
     SendStage, Session, SessionCallback, SessionError, SessionStore, text_hash,
@@ -692,6 +692,35 @@ fn session_crash_after_mailbox_applied_before_set_source_recovers_manually() {
 }
 
 #[test]
+fn session_crash_after_set_source_keeps_promoted_history_without_callback_retry() {
+    let (offerer, claimer) = paired_endpoints();
+    let mut sender = open_session(&offerer);
+    claimer
+        .callback
+        .set_disposition(MailboxDisposition::Applied);
+    let frame = sender
+        .send_clip(ClipContent::Text("promoted then crash".to_owned()), NOW)
+        .expect("send should succeed");
+    let (room_id, ciphertext_b64, _) = clip_fields(frame);
+
+    {
+        let mut receiver = open_session(&claimer);
+        let result = receiver.handle_clip_with_fault(
+            &room_id,
+            &ciphertext_b64,
+            true,
+            NOW,
+            Some(ReceiveStage::SourcePromoted),
+        );
+        assert!(matches!(result, Err(SessionError::InjectedFault)));
+    }
+
+    let restarted = open_session(&claimer);
+    assert_eq!(claimer.callback.mailbox_count(), 1);
+    assert_eq!(history_items(&restarted)[0].source, HistorySource::Remote);
+}
+
+#[test]
 fn session_mailbox_callback_error_keeps_history_and_never_retries() {
     // Given
     let (offerer, claimer) = paired_endpoints();
@@ -791,6 +820,22 @@ fn session_image_clip_roundtrips_through_live_path() {
     let live = claimer.callback.live_items();
     assert_eq!(live.len(), 1);
     assert_eq!(live[0].content, ClipContent::Image(bytes));
+}
+
+#[test]
+fn session_rejects_image_over_ten_mib_before_reserving_sequence() {
+    let (offerer, _claimer) = paired_endpoints();
+    let mut sender = open_session(&offerer);
+
+    let result = sender.send_clip(ClipContent::Image(vec![0; 10 * 1024 * 1024 + 1]), NOW);
+
+    assert!(matches!(
+        result,
+        Err(SessionError::Protocol(ProtocolError::Oversize { limit, .. }))
+            if limit == 10 * 1024 * 1024
+    ));
+    assert_eq!(sender.next_seq(), 1);
+    assert!(history_items(&sender).is_empty());
 }
 
 #[test]

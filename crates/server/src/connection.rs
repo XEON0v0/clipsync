@@ -301,7 +301,6 @@ impl Connection<'_> {
         if !members.iter().any(|member| member == &fp) {
             return Err(error_frame("room_full", "room already has two identities"));
         }
-        self.state.registry.activate_on_first_join(&room_id, &fp);
         self.state
             .rooms
             .join(

@@ -22,3 +22,6 @@ pub use crypto::{
 
 #[cfg(feature = "full")]
 pub mod history;
+
+#[cfg(feature = "full")]
+pub mod pairing;

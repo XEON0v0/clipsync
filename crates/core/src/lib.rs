@@ -29,4 +29,10 @@ pub mod history;
 pub mod pairing;
 
 #[cfg(feature = "full")]
+pub mod session;
+
+#[cfg(feature = "full")]
+pub mod pairing_client;
+
+#[cfg(feature = "full")]
 uniffi::setup_scaffolding!();

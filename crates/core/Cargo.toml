@@ -16,6 +16,7 @@ full = [
     "dep:x25519-dalek",
     "dep:hkdf",
     "dep:chacha20poly1305",
+    "dep:futures-util",
     "dep:rand",
     "dep:uuid",
     "dep:qrcode",
@@ -30,6 +31,7 @@ full = [
 base64.workspace = true
 chacha20poly1305 = { workspace = true, optional = true }
 ed25519-dalek = { workspace = true, optional = true }
+futures-util = { workspace = true, optional = true }
 hkdf = { workspace = true, optional = true }
 image = { workspace = true, optional = true }
 qrcode = { workspace = true, optional = true }

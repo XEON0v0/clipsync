@@ -7,6 +7,7 @@ let package = Package(
     platforms: [.macOS(.v13)],
     products: [
         .executable(name: "ClipSyncMacOS", targets: ["ClipSyncMacOS"]),
+        .executable(name: "ClipSyncDeadlockProbe", targets: ["ClipSyncDeadlockProbe"]),
     ],
     targets: [
         .executableTarget(
@@ -20,5 +21,6 @@ let package = Package(
                 ]),
             ]
         ),
+        .executableTarget(name: "ClipSyncDeadlockProbe"),
     ]
 )

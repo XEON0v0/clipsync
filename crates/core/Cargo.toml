@@ -5,6 +5,9 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 
+[lib]
+crate-type = ["lib", "cdylib", "staticlib"]
+
 [features]
 default = []
 verify = ["dep:sha2", "dep:ed25519-dalek"]

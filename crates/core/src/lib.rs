@@ -4,6 +4,8 @@ pub mod protocol;
 pub mod crypto;
 
 #[cfg(feature = "full")]
+mod ffi_spike;
+#[cfg(feature = "full")]
 pub mod full {}
 #[cfg(feature = "verify")]
 pub mod verify {}
@@ -25,3 +27,6 @@ pub mod history;
 
 #[cfg(feature = "full")]
 pub mod pairing;
+
+#[cfg(feature = "full")]
+uniffi::setup_scaffolding!();

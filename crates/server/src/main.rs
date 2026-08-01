@@ -12,11 +12,31 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 
 use clipboard_server::{
-    InMemoryRegistry, IpNet, NoopMailboxSink, PairingUnavailable, ServerConfig, start,
+    IpNet, NoopMailboxSink, PairingConfig, PairingRelay, PersistentRegistry, Registry,
+    ServerConfig, start,
 };
+
+const UNACTIVATED_TTL: std::time::Duration = std::time::Duration::from_secs(24 * 60 * 60);
 
 #[tokio::main]
 async fn main() -> io::Result<()> {
+    let data_dir = std::env::var("DATA_DIR").unwrap_or_else(|_| "./data".to_owned());
+    let registry = Arc::new(PersistentRegistry::open(&data_dir)?);
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    if !args.is_empty() {
+        if args == ["--prune-unactivated", "--older-than", "24h"] {
+            let ttl_ms = i64::try_from(UNACTIVATED_TTL.as_millis()).unwrap_or(i64::MAX);
+            let removed = registry.prune_unactivated(
+                clipboard_server::registry::unix_time_ms().saturating_sub(ttl_ms),
+            )?;
+            println!("pruned {removed} unactivated room(s)");
+            return Ok(());
+        }
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "usage: clipsync-server [--prune-unactivated --older-than 24h]",
+        ));
+    }
     let bind: SocketAddr = std::env::var("BIND_ADDR")
         .unwrap_or_else(|_| "127.0.0.1:8787".to_owned())
         .parse()
@@ -31,14 +51,18 @@ async fn main() -> io::Result<()> {
         trusted_proxy,
         ..ServerConfig::default()
     };
-    // T8 replaces this with the atomic on-disk registry; until then no room is
-    // registered and every join is refused with bad_auth.
-    let registry = Arc::new(InMemoryRegistry::new());
-    // T8 wires the real pairing exchange; T6 defines the seam.
-    let pairing = Arc::new(PairingUnavailable);
+    let pairing = Arc::new(PairingRelay::new(
+        registry.clone(),
+        PairingConfig::default(),
+    ));
     // T9 wires the mailbox persistence worker; T6 defines the seam.
     let mailbox = Arc::new(NoopMailboxSink);
-    let server = start(bind, config, registry, pairing, mailbox).await?;
+    let server = start(bind, config, registry.clone(), pairing, mailbox).await?;
+    clipboard_server::registry::spawn_unactivated_sweeper(
+        registry,
+        std::time::Duration::from_secs(60 * 60),
+        UNACTIVATED_TTL,
+    );
     eprintln!("clipsync relay listening on ws://{}/ws", server.addr());
     std::future::pending::<()>().await;
     #[allow(unreachable_code)]

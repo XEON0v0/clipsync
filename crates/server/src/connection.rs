@@ -32,7 +32,10 @@ const WRITER_DRAIN_TIMEOUT: std::time::Duration = std::time::Duration::from_secs
 /// Frames legal after hello while awaiting pair/join are handled by `phase`.
 enum Phase {
     PreHello,
-    Ready { nonce: Option<[u8; 32]> },
+    Ready {
+        nonce: Option<[u8; 32]>,
+        pub_bundle: PubBundle,
+    },
     Joined,
 }
 
@@ -74,6 +77,7 @@ pub async fn handle_connection(
     if let Some((room_id, fp)) = connection.joined.take() {
         state.rooms.disconnect(&room_id, fp, connection_id);
     }
+    state.pairing.on_disconnect(connection_id);
     state.connections.remove(&connection_id);
     drop(connection);
     // Dropping our outbox handle lets the writer drain queued frames (a pending
@@ -153,7 +157,19 @@ impl Connection<'_> {
 
     fn step(&mut self, frame: Frame, raw_len: usize) -> Step {
         match (&mut self.phase, frame) {
-            (Phase::PreHello, Frame::Hello { .. }) => {
+            (
+                Phase::PreHello,
+                Frame::Hello {
+                    device_id: hello_device_id,
+                    pub_bundle,
+                    ..
+                },
+            ) => {
+                if device_id(&pub_bundle.sign_pk) != hello_device_id {
+                    self.outbox
+                        .error_and_close("bad_auth", "hello device_id does not match signing key");
+                    return Step::Close;
+                }
                 let mut nonce = [0_u8; 32];
                 OsRng.fill_bytes(&mut nonce);
                 let hello_ok = Frame::HelloOk {
@@ -163,7 +179,10 @@ impl Connection<'_> {
                 if !self.outbox.send_frame(&hello_ok) {
                     return Step::Close;
                 }
-                self.phase = Phase::Ready { nonce: Some(nonce) };
+                self.phase = Phase::Ready {
+                    nonce: Some(nonce),
+                    pub_bundle,
+                };
                 Step::Continue
             }
             (Phase::PreHello, frame) => {
@@ -172,9 +191,14 @@ impl Connection<'_> {
                     .error_and_close("bad_frame", "expected hello as the first frame");
                 Step::Close
             }
-            (Phase::Ready { .. }, frame @ (Frame::PairOffer { .. } | Frame::PairClaim { .. })) => {
+            (
+                Phase::Ready { pub_bundle, .. },
+                frame @ (Frame::PairOffer { .. } | Frame::PairClaim { .. }),
+            ) => {
                 match self.state.pairing.on_pair_frame(
                     self.connection_id,
+                    self.client_ip,
+                    pub_bundle,
                     frame,
                     self.outbox,
                     &self.state.connections,
@@ -188,7 +212,7 @@ impl Connection<'_> {
                 }
             }
             (
-                Phase::Ready { nonce },
+                Phase::Ready { nonce, .. },
                 Frame::Join {
                     room_id,
                     device_id,

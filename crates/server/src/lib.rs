@@ -25,9 +25,9 @@ pub mod server;
 
 pub use config::{IpNet, Limits, ServerConfig, TestHooks};
 pub use mailbox::{MailboxSink, NoopMailboxSink, PendingClip};
-pub use pairing::{PairingHandler, PairingUnavailable};
+pub use pairing::{PairingConfig, PairingHandler, PairingRelay, PairingUnavailable};
 pub use ratelimit::IpRateLimiter;
-pub use registry::{InMemoryRegistry, Registry};
+pub use registry::{InMemoryRegistry, PersistentRegistry, Registry, RegistryCommit};
 pub use server::{ServerHandle, ServerState, start};
 
 /// Global quota for the room registry. Enforced by T8's registry implementation on the

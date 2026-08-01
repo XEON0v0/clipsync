@@ -20,6 +20,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use dashmap::DashMap;
+use tokio::sync::mpsc::OwnedPermit;
 use tokio::sync::{Notify, mpsc};
 
 use clipboard_core::protocol::{Frame, encode_frame};
@@ -53,6 +54,31 @@ pub struct OutboxReceiver {
     rx: mpsc::Receiver<Outbound>,
     pending_bytes: Arc<AtomicUsize>,
     force_close: Arc<Notify>,
+}
+
+/// Capacity reservation for a single encoded frame. Dropping it releases both the
+/// channel slot and byte budget, enabling atomic multi-outbox reservation.
+pub(crate) struct ReservedFrame {
+    permit: Option<OwnedPermit<Outbound>>,
+    encoded: Option<Vec<u8>>,
+    pending_bytes: Arc<AtomicUsize>,
+    size: usize,
+}
+
+impl ReservedFrame {
+    pub(crate) fn send(mut self) {
+        let permit = self.permit.take().expect("reservation is live");
+        let encoded = self.encoded.take().expect("reserved frame is encoded");
+        permit.send(Outbound::Frame(encoded));
+    }
+}
+
+impl Drop for ReservedFrame {
+    fn drop(&mut self) {
+        if self.permit.is_some() {
+            self.pending_bytes.fetch_sub(self.size, Ordering::Relaxed);
+        }
+    }
 }
 
 /// Creates a bounded outbox pair.
@@ -99,6 +125,29 @@ impl OutboxHandle {
             return false;
         }
         true
+    }
+
+    pub(crate) fn try_reserve_frame(&self, frame: &Frame) -> Option<ReservedFrame> {
+        let encoded = encode_frame(frame).expect("server-generated frames are valid");
+        let size = encoded.len();
+        let previous = self.pending_bytes.fetch_add(size, Ordering::Relaxed);
+        if previous + size > self.max_bytes {
+            self.pending_bytes.fetch_sub(size, Ordering::Relaxed);
+            return None;
+        }
+        let permit = match self.tx.clone().try_reserve_owned() {
+            Ok(permit) => permit,
+            Err(_) => {
+                self.pending_bytes.fetch_sub(size, Ordering::Relaxed);
+                return None;
+            }
+        };
+        Some(ReservedFrame {
+            permit: Some(permit),
+            encoded: Some(encoded),
+            pending_bytes: self.pending_bytes.clone(),
+            size,
+        })
     }
 
     /// Enqueues a close marker after already-queued frames; falls back to forcing the
@@ -420,8 +469,8 @@ impl RoomActor {
         if let Some(old) = self.online.remove(&fp) {
             old.outbox.close();
         }
-        // Same actor turn: enqueue join_ok and exactly one bootstrap frame into the
-        // connection FIFO BEFORE registering the member into the routing set.
+        // Reserve both success frames, durably activate the room, then publish them
+        // before registering the member into the routing set.
         let bootstrap = match self.mailbox_pending.remove(&fp) {
             Some(clip) => {
                 self.mailbox.clip_consumed(&self.room_id, &fp);
@@ -434,9 +483,25 @@ impl RoomActor {
             }
             None => Frame::MailboxEmpty,
         };
-        if !outbox.send_frame(&Frame::JoinOk) || !outbox.send_frame(&bootstrap) {
-            return; // fresh outbox violated its bounds; leave the member unregistered
+        let Some(join_ok) = outbox.try_reserve_frame(&Frame::JoinOk) else {
+            return;
+        };
+        let Some(bootstrap) = outbox.try_reserve_frame(&bootstrap) else {
+            return;
+        };
+        if let Err(error) = self.registry.activate_on_first_join(
+            &self.room_id,
+            &fp,
+            crate::registry::unix_time_ms(),
+        ) {
+            drop(join_ok);
+            drop(bootstrap);
+            outbox.error_and_close("registry_failed", "room activation could not be persisted");
+            eprintln!("failed to activate registry room {}: {error}", self.room_id);
+            return;
         }
+        join_ok.send();
+        bootstrap.send();
         self.online.insert(
             fp.clone(),
             OnlineMember {
@@ -444,7 +509,6 @@ impl RoomActor {
                 outbox,
             },
         );
-        self.registry.activate_on_first_join(&self.room_id, &fp);
     }
 
     fn on_clip(&mut self, sender_fp: &str, connection_id: ConnectionId, ciphertext_b64: String) {

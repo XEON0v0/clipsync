@@ -1,0 +1,15 @@
+id: server-no-content-crypto
+message: The relay must not import or call client content-encryption primitives.
+severity: error
+language: Rust
+rule:
+  any:
+    - all:
+        - kind: use_declaration
+        - regex: '(chacha20poly1305|x25519_dalek|hkdf)'
+    - all:
+        - kind: scoped_identifier
+        - regex: '^(chacha20poly1305|x25519_dalek|hkdf)::'
+    - all:
+        - kind: scoped_type_identifier
+        - regex: '^(chacha20poly1305|x25519_dalek|hkdf)::'

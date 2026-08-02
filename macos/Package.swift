@@ -10,8 +10,22 @@ let package = Package(
         .executable(name: "ClipSyncDeadlockProbe", targets: ["ClipSyncDeadlockProbe"]),
     ],
     targets: [
+        .binaryTarget(
+            name: "clipboard_coreFFI",
+            path: "Frameworks/ClipboardCore.xcframework"
+        ),
+        .target(
+            name: "ClipboardCoreBindings",
+            dependencies: ["clipboard_coreFFI"]
+        ),
+        .target(
+            name: "ClipSyncMacOSKit",
+            dependencies: ["ClipboardCoreBindings"]
+        ),
         .executableTarget(
             name: "ClipSyncMacOS",
+            dependencies: ["ClipSyncMacOSKit"],
+            path: "Sources/ClipSyncMacOSApp",
             linkerSettings: [
                 .unsafeFlags([
                     "-Xlinker", "-sectcreate",
@@ -22,5 +36,9 @@ let package = Package(
             ]
         ),
         .executableTarget(name: "ClipSyncDeadlockProbe"),
+        .testTarget(
+            name: "ClipSyncMacOSKitTests",
+            dependencies: ["ClipSyncMacOSKit"]
+        ),
     ]
 )

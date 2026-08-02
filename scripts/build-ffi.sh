@@ -149,6 +149,10 @@ cargo run --locked -p clipsync-uniffi-bindgen -- generate \
     && -f "$GEN_DIR/clipboard_coreFFI.modulemap" \
     && -f "$GEN_DIR/uniffi/clipboard_core/clipboard_core.kt" ]] \
     || fail "binding artifacts incomplete"
+# UniFFI 0.29.4 emits trailing spaces in Swift declarations. Normalize only
+# whitespace so the tracked binding remains diff-clean and reproducible.
+perl -pi -e 's/[ \t]+$//' "$GEN_DIR/clipboard_core.swift"
+perl -0pi -e 's/\n+\z/\n/' "$GEN_DIR/clipboard_core.swift"
 printf 'PASS: Swift and Kotlin bindings generated\n'
 
 step "Apple XCFramework (pinned Darwin targets, release staticlibs)"
@@ -156,14 +160,15 @@ rm -rf "$HEADERS_DIR" "$OUT_DIR/apple"
 mkdir -p "$HEADERS_DIR"
 cp "$GEN_DIR/clipboard_coreFFI.h" "$HEADERS_DIR/"
 cat > "$HEADERS_DIR/module.modulemap" <<'MODULEMAP'
-module ClipboardCoreFFI {
+module clipboard_coreFFI {
     header "clipboard_coreFFI.h"
     export *
 }
 MODULEMAP
 for target in aarch64-apple-darwin x86_64-apple-darwin; do
-    printf '+ cargo build --locked --release --target %s -p clipboard-core %s\n' "$target" "$CORE_FEATURES"
-    cargo build --locked --release --target "$target" -p clipboard-core $CORE_FEATURES
+    printf '+ MACOSX_DEPLOYMENT_TARGET=13.0 cargo build --locked --release --target %s -p clipboard-core %s\n' "$target" "$CORE_FEATURES"
+    MACOSX_DEPLOYMENT_TARGET=13.0 \
+        cargo build --locked --release --target "$target" -p clipboard-core $CORE_FEATURES
 done
 # macOS XCFramework slices are per-platform: merge both pinned Darwin
 # targets into one universal archive first.
@@ -175,6 +180,13 @@ lipo -create \
 "$XCODEBUILD_BIN" -create-xcframework \
     -library "$OUT_DIR/apple/universal/libclipboard_core.a" -headers "$HEADERS_DIR" \
     -output "$OUT_DIR/apple/ClipboardCore.xcframework"
+TRACKED_SWIFT_BINDING="$ROOT_DIR/macos/Sources/ClipboardCoreBindings/clipboard_core.swift"
+cmp "$GEN_DIR/clipboard_core.swift" "$TRACKED_SWIFT_BINDING" \
+    || fail "tracked Swift binding drifted from the pinned UniFFI output"
+MACOS_FRAMEWORK_DIR="$ROOT_DIR/macos/Frameworks"
+rm -rf "$MACOS_FRAMEWORK_DIR/ClipboardCore.xcframework"
+mkdir -p "$MACOS_FRAMEWORK_DIR"
+cp -R "$OUT_DIR/apple/ClipboardCore.xcframework" "$MACOS_FRAMEWORK_DIR/"
 printf 'XCFramework slices:\n'
 ls "$OUT_DIR/apple/ClipboardCore.xcframework"
 for archive in "$OUT_DIR/apple/ClipboardCore.xcframework"/*/libclipboard_core.a; do

@@ -1,6 +1,7 @@
 //! Pairing and live-session transport over the relay WebSocket protocol.
 
 use std::fmt;
+use std::sync::Arc;
 use std::time::Duration;
 
 use base64::{Engine as _, engine::general_purpose::STANDARD};
@@ -9,8 +10,12 @@ use rand::{Rng, RngCore, rngs::OsRng};
 use thiserror::Error;
 use tokio::net::TcpStream;
 use tokio_tungstenite::tungstenite::Message;
+use tokio_tungstenite::tungstenite::client::IntoClientRequest;
 use tokio_tungstenite::tungstenite::protocol::WebSocketConfig;
-use tokio_tungstenite::{MaybeTlsStream, WebSocketStream, connect_async_with_config};
+use tokio_tungstenite::{
+    Connector, MaybeTlsStream, WebSocketStream, client_async_tls_with_config,
+    connect_async_with_config,
+};
 
 use crate::crypto::{Identity, bundle_bytes, join_sig_msg};
 use crate::pairing::{
@@ -55,10 +60,50 @@ impl PairingClient {
     /// Connects to a relay and completes `hello -> hello_ok`.
     pub async fn connect(store: &PairingStore, server: &str) -> Result<Self, TransportError> {
         let identity = store.load_identity()?;
-        let (mut socket, _) =
-            connect_async_with_config(server, Some(relay_websocket_config()), false)
-                .await
-                .map_err(websocket_error)?;
+        let (socket, _) = connect_async_with_config(server, Some(relay_websocket_config()), false)
+            .await
+            .map_err(websocket_error)?;
+        Self::handshake(server, identity, socket).await
+    }
+
+    /// Connects over `wss://` with a caller-provided TLS configuration and
+    /// completes `hello -> hello_ok`.
+    ///
+    /// This is the test-CA injection path used by end-to-end tests behind a
+    /// local TLS front proxy. Production callers use [`PairingClient::connect`],
+    /// which trusts only the bundled webpki roots.
+    pub async fn connect_with_tls(
+        store: &PairingStore,
+        server: &str,
+        tls: Arc<rustls::ClientConfig>,
+    ) -> Result<Self, TransportError> {
+        let identity = store.load_identity()?;
+        let request = server.into_client_request().map_err(websocket_error)?;
+        let host = request
+            .uri()
+            .host()
+            .ok_or_else(|| TransportError::WebSocket(format!("relay URL {server} has no host")))?
+            .to_owned();
+        let port = request.uri().port_u16().unwrap_or(443);
+        let stream = TcpStream::connect((host.as_str(), port))
+            .await
+            .map_err(|error| TransportError::WebSocket(format!("tcp connect failed: {error}")))?;
+        let (socket, _) = client_async_tls_with_config(
+            request,
+            stream,
+            Some(relay_websocket_config()),
+            Some(Connector::Rustls(tls)),
+        )
+        .await
+        .map_err(websocket_error)?;
+        Self::handshake(server, identity, socket).await
+    }
+
+    async fn handshake(
+        server: &str,
+        identity: Identity,
+        mut socket: Socket,
+    ) -> Result<Self, TransportError> {
         send_frame(
             &mut socket,
             &Frame::Hello {
@@ -120,7 +165,29 @@ impl PairingClient {
     ) -> Result<PairingChannel, TransportError> {
         let claimer_identity = store.load_identity()?;
         let claimer = Claimer::start(&claimer_identity, qr.clone())?;
-        let mut client = Self::connect(store, &qr.server).await?;
+        let client = Self::connect(store, &qr.server).await?;
+        Self::claim_channel(qr, claimer, client).await
+    }
+
+    /// Claims a QR-pinned offer over `wss://` with a caller-provided TLS
+    /// configuration (the test-CA injection path; see
+    /// [`PairingClient::connect_with_tls`]).
+    pub async fn claim_with_tls(
+        store: &PairingStore,
+        qr: &QrPayload,
+        tls: Arc<rustls::ClientConfig>,
+    ) -> Result<PairingChannel, TransportError> {
+        let claimer_identity = store.load_identity()?;
+        let claimer = Claimer::start(&claimer_identity, qr.clone())?;
+        let client = Self::connect_with_tls(store, &qr.server, tls).await?;
+        Self::claim_channel(qr, claimer, client).await
+    }
+
+    async fn claim_channel(
+        qr: &QrPayload,
+        claimer: Claimer,
+        mut client: PairingClient,
+    ) -> Result<PairingChannel, TransportError> {
         send_frame(
             &mut client.socket,
             &Frame::PairClaim {
@@ -156,6 +223,33 @@ fn relay_websocket_config() -> WebSocketConfig {
     WebSocketConfig::default()
         .max_frame_size(Some(MAX_FRAME_BYTES))
         .max_message_size(Some(MAX_MESSAGE_BYTES))
+}
+
+/// Builds a rustls client configuration trusting exactly the given
+/// DER-encoded root certificates.
+///
+/// This exists so end-to-end tests can inject a locally generated test CA
+/// behind a TLS front proxy; production connections keep the bundled webpki
+/// roots via [`PairingClient::connect`].
+///
+/// # Errors
+/// Returns an error when any root fails to parse as an X.509 certificate.
+pub fn tls_config_with_roots(
+    root_ders: &[&[u8]],
+) -> Result<Arc<rustls::ClientConfig>, TransportError> {
+    let mut roots = rustls::RootCertStore::empty();
+    for der in root_ders {
+        roots
+            .add(rustls::pki_types::CertificateDer::from(der.to_vec()))
+            .map_err(|error| {
+                TransportError::WebSocket(format!("test CA certificate is invalid: {error}"))
+            })?;
+    }
+    Ok(Arc::new(
+        rustls::ClientConfig::builder()
+            .with_root_certificates(roots)
+            .with_no_client_auth(),
+    ))
 }
 
 /// Published offer waiting for the peer bundle.

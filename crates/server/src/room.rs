@@ -422,10 +422,11 @@ impl RoomActor {
         while let Some(event) = rx.recv().await {
             self.pending_bytes
                 .fetch_sub(event.payload_size(), Ordering::Relaxed);
-            if let Some(gate) = &self.hooks.room_event_gate
-                && gate.acquire().await.is_err()
-            {
-                return;
+            if let Some(gate) = &self.hooks.room_event_gate {
+                let Ok(permit) = gate.acquire().await else {
+                    return;
+                };
+                permit.forget();
             }
             match event {
                 RoomEvent::Join {

@@ -46,3 +46,8 @@ tokio-tungstenite = { workspace = true, optional = true }
 uniffi = { workspace = true, optional = true }
 uuid = { workspace = true, optional = true }
 x25519-dalek = { workspace = true, optional = true }
+
+[dev-dependencies]
+clipboard-server = { path = "../server" }
+tempfile = "=3.27.0"
+tokio.workspace = true

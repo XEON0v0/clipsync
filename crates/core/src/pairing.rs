@@ -513,7 +513,7 @@ impl Drop for PendingFile {
     }
 }
 
-fn validate_server(server: &str) -> Result<(), PairingError> {
+pub(crate) fn validate_server(server: &str) -> Result<(), PairingError> {
     let authority_and_path = if let Some(rest) = server.strip_prefix("wss://") {
         rest
     } else if cfg!(debug_assertions) {

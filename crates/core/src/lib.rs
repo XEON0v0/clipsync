@@ -4,7 +4,7 @@ pub mod protocol;
 pub mod crypto;
 
 #[cfg(feature = "full")]
-mod ffi_spike;
+pub mod ffi;
 #[cfg(feature = "full")]
 pub mod full {}
 #[cfg(feature = "verify")]

@@ -4,6 +4,9 @@
 //! - `BIND_ADDR` (default `127.0.0.1:8787`): listen address;
 //! - `TRUSTED_PROXY` (optional): exact IP or CIDR of the Caddy container; only
 //!   connections from this peer may supply X-Forwarded-For.
+//! - `DATA_DIR` (default `./data`): registry directory;
+//! - `MAILBOX_DIR` (default `$DATA_DIR/mailboxes`, `/data/mailboxes` in the
+//!   production container): one latest-clip snapshot per room.
 //!
 //! TLS terminates at the Caddy layer, never here.
 
@@ -12,8 +15,8 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 
 use clipboard_server::{
-    IpNet, NoopMailboxSink, PairingConfig, PairingRelay, PersistentRegistry, Registry,
-    ServerConfig, start,
+    IpNet, MailboxOptions, PairingConfig, PairingRelay, PersistentMailbox, PersistentRegistry,
+    Registry, ServerConfig, start,
 };
 
 const UNACTIVATED_TTL: std::time::Duration = std::time::Duration::from_secs(24 * 60 * 60);
@@ -55,9 +58,11 @@ async fn main() -> io::Result<()> {
         registry.clone(),
         PairingConfig::default(),
     ));
-    // T9 wires the mailbox persistence worker; T6 defines the seam.
-    let mailbox = Arc::new(NoopMailboxSink);
-    let server = start(bind, config, registry.clone(), pairing, mailbox).await?;
+    let mailbox_dir = std::env::var("MAILBOX_DIR")
+        .unwrap_or_else(|_| std::path::Path::new(&data_dir).join("mailboxes").to_string_lossy().into_owned());
+    let mailbox = PersistentMailbox::open(&mailbox_dir, MailboxOptions::default())?;
+    let server = start(bind, config, registry.clone(), pairing, mailbox.clone()).await?;
+    mailbox.spawn_ttl_sweeper(std::time::Duration::from_secs(60 * 60));
     clipboard_server::registry::spawn_unactivated_sweeper(
         registry,
         std::time::Duration::from_secs(60 * 60),

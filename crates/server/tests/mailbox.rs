@@ -11,25 +11,35 @@ use std::time::Duration;
 
 use common::*;
 
+use clipboard_core::crypto::room_id;
 use clipboard_core::protocol::Frame;
 use clipboard_server::{
     InMemoryRegistry, Limits, MailboxOptions, PairingUnavailable, PersistentMailbox, ServerConfig,
     ServerHandle, start,
 };
 use tempfile::TempDir;
+use tokio::time::timeout;
 
 struct PersistentServer {
     addr: SocketAddr,
     registry: Arc<InMemoryRegistry>,
-    mailbox: Arc<PersistentMailbox>,
     _handle: ServerHandle,
+}
+
+/// Registers the room for exactly identities `a` and `b` and returns its room_id.
+fn register(server: &PersistentServer, a: &TestIdentity, b: &TestIdentity) -> String {
+    let room = room_id(&a.bundle, &b.bundle);
+    server.registry.register_room(&room, &[a.fp(), b.fp()]);
+    room
 }
 
 async fn start_persistent(dir: &Path, options: MailboxOptions) -> PersistentServer {
     let registry = Arc::new(InMemoryRegistry::new());
     let mailbox = PersistentMailbox::open(dir, options).expect("mailbox opens");
-    let mut limits = Limits::default();
-    limits.join_attempts_per_minute = 100;
+    let limits = Limits {
+        join_attempts_per_minute: 100,
+        ..Limits::default()
+    };
     let handle = start(
         "127.0.0.1:0".parse().unwrap(),
         ServerConfig {
@@ -45,7 +55,6 @@ async fn start_persistent(dir: &Path, options: MailboxOptions) -> PersistentServ
     PersistentServer {
         addr: handle.addr(),
         registry,
-        mailbox,
         _handle: handle,
     }
 }
@@ -151,7 +160,7 @@ async fn mailbox_bootstrap_delivers_latest_of_three_exactly_one_frame() {
     let server = start_persistent(dir.path(), fast_options()).await;
     let alice = TestIdentity::generate();
     let bob = TestIdentity::generate();
-    let room = register_room(&server, &alice, &bob);
+    let room = register(&server, &alice, &bob);
 
     let mut alice_conn = Client::connect(server.addr).await;
     alice_conn.join_live(&alice, &room).await;
@@ -222,7 +231,7 @@ async fn mailbox_origin_self_join_gets_mailbox_empty_bootstrap() {
     let server = start_persistent(dir.path(), fast_options()).await;
     let alice = TestIdentity::generate();
     let bob = TestIdentity::generate();
-    let room = register_room(&server, &alice, &bob);
+    let room = register(&server, &alice, &bob);
 
     let mut alice_conn = Client::connect(server.addr).await;
     alice_conn.join_live(&alice, &room).await;
@@ -268,7 +277,7 @@ async fn mailbox_restart_reloads_pending_clip() {
 
     let room = {
         let server = start_persistent(dir.path(), fast_options()).await;
-        let room = register_room(&server, &alice, &bob);
+        let room = register(&server, &alice, &bob);
         let mut alice_conn = Client::connect(server.addr).await;
         alice_conn.join_live(&alice, &room).await;
         alice_conn
@@ -309,7 +318,7 @@ async fn mailbox_healthz_degraded_on_write_failure_and_recovers() {
     let server = start_persistent(dir.path(), fast_options()).await;
     let alice = TestIdentity::generate();
     let bob = TestIdentity::generate();
-    let room = register_room(&server, &alice, &bob);
+    let room = register(&server, &alice, &bob);
 
     wait_healthz(server.addr, 200).await;
 

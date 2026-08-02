@@ -20,7 +20,7 @@ use clipboard_core::protocol::{MAX_FRAME_BYTES, MAX_MESSAGE_BYTES};
 
 use crate::config::ServerConfig;
 use crate::connection::handle_connection;
-use crate::mailbox::MailboxSink;
+use crate::mailbox::{HealthProbe, MailboxSink};
 use crate::pairing::{Connections, PairingHandler};
 use crate::ratelimit::IpRateLimiter;
 use crate::registry::Registry;
@@ -35,6 +35,9 @@ pub struct ServerState {
     pub connections: Connections,
     pub connection_permits: Arc<Semaphore>,
     pub rate_limits: IpRateLimiter,
+    /// Mailbox persistence health; `/healthz` reports degraded while a
+    /// publication is failing. `None` when the sink has no persistence.
+    pub mailbox_health: Option<HealthProbe>,
     next_connection_id: AtomicU64,
 }
 
@@ -47,6 +50,7 @@ impl ServerState {
         pairing: Arc<dyn PairingHandler>,
         mailbox: Arc<dyn MailboxSink>,
     ) -> Self {
+        let mailbox_health = mailbox.health_probe();
         Self {
             rate_limits: IpRateLimiter::new(&config.limits),
             connection_permits: Arc::new(Semaphore::new(config.limits.max_connections)),
@@ -60,6 +64,7 @@ impl ServerState {
             registry,
             pairing,
             connections: DashMap::new(),
+            mailbox_health,
             next_connection_id: AtomicU64::new(1),
         }
     }
@@ -69,7 +74,17 @@ impl ServerState {
 pub fn router(state: Arc<ServerState>) -> Router {
     Router::new()
         .route("/ws", get(ws_handler))
+        .route("/healthz", get(healthz_handler))
         .with_state(state)
+}
+
+async fn healthz_handler(State(state): State<Arc<ServerState>>) -> Response {
+    match &state.mailbox_health {
+        Some(probe) if !probe.is_healthy() => {
+            (StatusCode::SERVICE_UNAVAILABLE, "degraded\n").into_response()
+        }
+        _ => (StatusCode::OK, "ok\n").into_response(),
+    }
 }
 
 async fn ws_handler(

@@ -24,7 +24,10 @@ pub mod room;
 pub mod server;
 
 pub use config::{IpNet, Limits, ServerConfig, TestHooks};
-pub use mailbox::{MailboxSink, NoopMailboxSink, PendingClip};
+pub use mailbox::{
+    HealthProbe, MAILBOX_TTL, MailboxOptions, MailboxSink, NoopMailboxSink, PendingClip,
+    PersistentMailbox,
+};
 pub use pairing::{PairingConfig, PairingHandler, PairingRelay, PairingUnavailable};
 pub use ratelimit::IpRateLimiter;
 pub use registry::{InMemoryRegistry, PersistentRegistry, Registry, RegistryCommit};

@@ -1,0 +1,59 @@
+name: clipsync
+
+services:
+  server:
+    image: clipsync-server:local
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+      args:
+        CARGO_REGISTRY_CONFIG: ${CARGO_REGISTRY_CONFIG:-deploy/cargo-config.crates-io.toml}
+    restart: unless-stopped
+    environment:
+      BIND_ADDR: 0.0.0.0:8080
+      DATA_DIR: /data
+      MAILBOX_DIR: /data/mailboxes
+      TRUSTED_PROXY: 172.30.0.2/32
+    volumes:
+      - server_data:/data
+    networks:
+      clipsync:
+        ipv4_address: 172.30.0.3
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+
+  caddy:
+    image: caddy:2.10.0-alpine@sha256:ae4458638da8e1a91aafffb231c5f8778e964bca650c8a8cb23a7e8ac557aa3c
+    restart: unless-stopped
+    depends_on:
+      server:
+        condition: service_healthy
+    environment:
+      DOMAIN: ${DOMAIN:?set DOMAIN to the relay hostname}
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    networks:
+      clipsync:
+        ipv4_address: 172.30.0.2
+    security_opt:
+      - no-new-privileges:true
+
+networks:
+  clipsync:
+    ipam:
+      config:
+        - subnet: 172.30.0.0/24
+
+volumes:
+  server_data:
+  caddy_data:
+  caddy_config:

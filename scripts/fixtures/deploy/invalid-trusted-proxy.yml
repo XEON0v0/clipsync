@@ -1,0 +1,4 @@
+services:
+  server:
+    environment:
+      TRUSTED_PROXY: 172.30.0.2/99

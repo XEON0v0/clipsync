@@ -1,0 +1,16 @@
+.git
+.gitignore
+.omo
+.idea
+.DS_Store
+target
+dist
+android
+macos
+scripts
+deploy/*
+!deploy/cargo-config.crates-io.toml
+!deploy/cargo-config.rsproxy.toml
+**/build
+**/.gradle
+**/.build

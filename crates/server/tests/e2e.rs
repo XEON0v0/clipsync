@@ -47,8 +47,8 @@ use clipboard_core::session::{
     SessionCallback, SessionError, SessionStore, text_hash,
 };
 use clipboard_server::{
-    InMemoryRegistry, IpNet, MailboxOptions, PairingConfig, PairingRelay, PersistentMailbox,
-    PersistentRegistry, Registry, ServerConfig, ServerHandle, start,
+    InMemoryRegistry, IpNet, Limits, MailboxOptions, PairingConfig, PairingRelay, PersistentMailbox,
+    PersistentRegistry, Registry, ServerConfig, ServerHandle, TestHooks, start,
 };
 
 use common::{Client, Read, RecordingMailbox, TestIdentity, eventually};
@@ -1292,9 +1292,14 @@ async fn e2e_15_registry_commits_before_pair_peer_delivery() {
 /// peer, so forged XFF values never reach the relay's rate limiter.
 #[tokio::test]
 async fn e2e_16_wss_proxy_injected_ca_and_xff_rewrite() {
-    let mut config = ServerConfig::default();
-    config.trusted_proxy = Some(IpNet::parse("127.0.0.1").expect("trusted proxy"));
-    config.limits.join_attempts_per_minute = 4;
+    let config = ServerConfig {
+        trusted_proxy: Some(IpNet::parse("127.0.0.1").expect("trusted proxy")),
+        limits: Limits {
+            join_attempts_per_minute: 4,
+            ..Limits::default()
+        },
+        ..ServerConfig::default()
+    };
     let relay = start_relay_with(config).await;
 
     let pki = test_pki();
@@ -1871,8 +1876,13 @@ async fn e2e_25_mailbox_redelivery_after_restart_is_deduplicated() {
 #[tokio::test]
 async fn e2e_26_stale_connection_events_are_dropped() {
     let gate = Arc::new(Semaphore::new(0));
-    let mut config = ServerConfig::default();
-    config.hooks.room_event_gate = Some(gate.clone());
+    let config = ServerConfig {
+        hooks: TestHooks {
+            room_event_gate: Some(gate.clone()),
+            ..TestHooks::default()
+        },
+        ..ServerConfig::default()
+    };
     let mut relay = start_relay_with(config).await;
 
     gate.add_permits(2); // the two pairing joins

@@ -42,3 +42,13 @@ Generate UniFFI bindings only through the workspace wrapper:
 ```sh
 cargo run --locked -p clipsync-uniffi-bindgen -- <args>
 ```
+
+## macOS Installation
+
+1. Run `scripts/package-macos.sh`, then move `dist/ClipboardSync.app` to `/Applications`.
+2. On first launch, Control-click the app and choose **Open** to approve the ad-hoc signed build.
+3. Set the relay `wss://` URL, choose **Pair Device**, scan the QR code on Android, and confirm the same six-digit security code on both devices.
+
+Open at Login can be enabled in ClipSync settings. If macOS requires approval, use the displayed button to open the Login Items settings page.
+
+ClipSync is intentionally menu-bar-only (`LSUIElement`), so it does not add a Dock icon; pairing and history open as on-demand utility windows.

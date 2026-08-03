@@ -532,6 +532,16 @@ public protocol CoreHandleProtocol: AnyObject, Sendable {
     func history() throws  -> [FfiHistoryItem]
 
     /**
+     * Applies a deferred history item and durably promotes its source.
+     */
+    func historyApply(id: String) throws
+
+    /**
+     * Clears all durable history entries and retained image payloads.
+     */
+    func historyClear() throws
+
+    /**
      * Raw encoded bytes of an image history item.
      */
     func historyImageBytes(id: String) throws  -> Data
@@ -688,6 +698,25 @@ open func history()throws  -> [FfiHistoryItem]  {
     uniffi_clipboard_core_fn_method_corehandle_history(self.uniffiClonePointer(),$0
     )
 })
+}
+
+    /**
+     * Applies a deferred history item and durably promotes its source.
+     */
+open func historyApply(id: String)throws   {try rustCallWithError(FfiConverterTypeCoreError_lift) {
+    uniffi_clipboard_core_fn_method_corehandle_history_apply(self.uniffiClonePointer(),
+        FfiConverterString.lower(id),$0
+    )
+}
+}
+
+    /**
+     * Clears all durable history entries and retained image payloads.
+     */
+open func historyClear()throws   {try rustCallWithError(FfiConverterTypeCoreError_lift) {
+    uniffi_clipboard_core_fn_method_corehandle_history_clear(self.uniffiClonePointer(),$0
+    )
+}
 }
 
     /**
@@ -1976,6 +2005,12 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.contractVersionMismatch
     }
     if (uniffi_clipboard_core_checksum_method_corehandle_history() != 57692) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_clipboard_core_checksum_method_corehandle_history_apply() != 49636) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_clipboard_core_checksum_method_corehandle_history_clear() != 15675) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_clipboard_core_checksum_method_corehandle_history_image_bytes() != 55220) {

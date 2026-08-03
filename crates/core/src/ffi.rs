@@ -19,7 +19,7 @@
 // allow: SIZE_OK - T10 locks the complete FFI contract (callbacks, dispatcher, reset) here.
 
 use std::panic::{AssertUnwindSafe, catch_unwind};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError, Weak};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
@@ -180,6 +180,13 @@ enum CoreCommand {
     HistoryImage {
         id: Uuid,
         reply: std::sync::mpsc::Sender<Result<Vec<u8>, CoreError>>,
+    },
+    HistoryApply {
+        id: Uuid,
+        reply: std::sync::mpsc::Sender<Result<(), CoreError>>,
+    },
+    HistoryClear {
+        reply: std::sync::mpsc::Sender<Result<(), CoreError>>,
     },
     IsEcho {
         hash: String,
@@ -483,6 +490,23 @@ impl CoreHandle {
             .map_err(|_| CoreError::Internal("dispatcher stopped".to_owned()))?
     }
 
+    /// Applies a deferred history item and durably promotes its source.
+    pub fn history_apply(&self, id: String) -> Result<(), CoreError> {
+        let id = Uuid::parse_str(&id).map_err(|error| CoreError::InvalidInput(error.to_string()))?;
+        let (reply, rx) = std::sync::mpsc::channel();
+        self.try_command(CoreCommand::HistoryApply { id, reply })?;
+        rx.recv()
+            .map_err(|_| CoreError::Internal("dispatcher stopped".to_owned()))?
+    }
+
+    /// Clears all durable history entries and retained image payloads.
+    pub fn history_clear(&self) -> Result<(), CoreError> {
+        let (reply, rx) = std::sync::mpsc::channel();
+        self.try_command(CoreCommand::HistoryClear { reply })?;
+        rx.recv()
+            .map_err(|_| CoreError::Internal("dispatcher stopped".to_owned()))?
+    }
+
     /// True when `hash` (see the shared `text_hash` contract) matches a
     /// recently sent or applied text clip; false when no session is live.
     pub fn is_echo(&self, hash: String) -> bool {
@@ -504,7 +528,11 @@ impl CoreHandle {
             .and_then(|store| reset_pairing_state_after_quiesce(&store).map_err(CoreError::from_pairing));
         // Whatever happened, leave the handle usable: a fresh empty dispatcher
         // returns the host to ReadyUnpaired instead of a wedged state.
-        match Self::spawn_active(self.queue_capacity, &self.callbacks) {
+        match Self::spawn_active(
+            self.queue_capacity,
+            &self.callbacks,
+            self.root.join("history"),
+        ) {
             Ok(fresh) => {
                 if let Ok(mut guard) = self.lock_state() {
                     *guard = HandleState::Active(Box::new(fresh));
@@ -550,7 +578,11 @@ impl CoreHandle {
             this: this.clone(),
             state: Mutex::new(HandleState::Transitioning),
         });
-        let active = Self::spawn_active(handle.queue_capacity, &handle.callbacks)?;
+        let active = Self::spawn_active(
+            handle.queue_capacity,
+            &handle.callbacks,
+            handle.root.join("history"),
+        )?;
         *handle.lock_state()? = HandleState::Active(Box::new(active));
         Ok(handle)
     }
@@ -558,6 +590,7 @@ impl CoreHandle {
     fn spawn_active(
         queue_capacity: usize,
         callbacks: &Arc<dyn CoreCallbacks>,
+        history_dir: PathBuf,
     ) -> Result<Active, CoreError> {
         let runtime = tokio::runtime::Builder::new_multi_thread()
             .worker_threads(2)
@@ -571,6 +604,7 @@ impl CoreHandle {
         let dispatcher = runtime.spawn(run_dispatcher(
             cmd_rx,
             callbacks.clone(),
+            history_dir,
             joined_tx,
             stopped.clone(),
         ));
@@ -864,6 +898,7 @@ async fn wait_for_peer(
 async fn run_dispatcher(
     mut rx: mpsc::Receiver<CoreCommand>,
     callbacks: Arc<dyn CoreCallbacks>,
+    history_dir: PathBuf,
     joined: std::sync::mpsc::Sender<()>,
     stopped: Arc<AtomicBool>,
 ) {
@@ -882,7 +917,7 @@ async fn run_dispatcher(
                     let _ = reply.send(());
                     continue;
                 }
-                handle_command(command, &mut connection, &callbacks).await;
+                handle_command(command, &mut connection, &callbacks, &history_dir).await;
             }
             event = async {
                 let active = connection.as_mut().expect("polled only while connected");
@@ -912,6 +947,7 @@ async fn handle_command(
     command: CoreCommand,
     connection: &mut Option<Connection>,
     callbacks: &Arc<dyn CoreCallbacks>,
+    history_dir: &Path,
 ) {
     match command {
         CoreCommand::Send {
@@ -934,7 +970,13 @@ async fn handle_command(
                     .iter()
                     .map(ffi_history_item)
                     .collect()),
-                None => Err(CoreError::NotPaired),
+                None => open_history(history_dir).map(|store| {
+                    store
+                        .list()
+                        .iter()
+                        .map(ffi_history_item)
+                        .collect()
+                }),
             };
             let _ = reply.send(result);
         }
@@ -945,7 +987,37 @@ async fn handle_command(
                     .history()
                     .image_bytes(id)
                     .map_err(|error| CoreError::Internal(error.to_string())),
-                None => Err(CoreError::NotPaired),
+                None => open_history(history_dir).and_then(|store| {
+                    store
+                        .image_bytes(id)
+                        .map_err(CoreError::from_history)
+                }),
+            };
+            let _ = reply.send(result);
+        }
+        CoreCommand::HistoryApply { id, reply } => {
+            let result = match connection.as_mut() {
+                Some(active) => active
+                    .session
+                    .apply_deferred(id)
+                    .map_err(|error| CoreError::Internal(error.to_string())),
+                None => open_history(history_dir).and_then(|mut store| {
+                    store
+                        .set_source(id, HistorySource::Remote)
+                        .map_err(CoreError::from_history)
+                }),
+            };
+            let _ = reply.send(result);
+        }
+        CoreCommand::HistoryClear { reply } => {
+            let result = match connection.as_mut() {
+                Some(active) => active
+                    .session
+                    .clear_history()
+                    .map_err(|error| CoreError::Internal(error.to_string())),
+                None => open_history(history_dir).and_then(|mut store| {
+                    store.clear().map_err(CoreError::from_history)
+                }),
             };
             let _ = reply.send(result);
         }
@@ -977,6 +1049,10 @@ async fn handle_command(
             let _ = release.recv();
         }
     }
+}
+
+fn open_history(history_dir: &Path) -> Result<HistoryStore, CoreError> {
+    HistoryStore::new(history_dir).map_err(CoreError::from_history)
 }
 
 async fn send_over_connection(

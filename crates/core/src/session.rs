@@ -595,6 +595,15 @@ impl Session {
         Ok(())
     }
 
+    /// Clears all durable history entries and retained image payloads.
+    ///
+    /// # Errors
+    /// Returns history persistence errors without changing session pairing.
+    pub fn clear_history(&mut self) -> Result<(), SessionError> {
+        self.history.clear()?;
+        Ok(())
+    }
+
     fn authenticate(&self, room_id: &str, ciphertext_b64: &str) -> Option<ClipItem> {
         if room_id != self.room_id {
             return None;

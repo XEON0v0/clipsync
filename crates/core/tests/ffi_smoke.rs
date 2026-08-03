@@ -11,6 +11,7 @@ use clipboard_core::ffi::{
     CoreCallbacks, CoreError, CoreHandle, CoreStatus, FfiClipContent, FfiClipItem,
     MailboxDisposition, PairingSnapshot,
 };
+use clipboard_core::history::{HistoryContent, HistorySource, HistoryStore, NewHistoryItem};
 use clipboard_core::session::text_hash;
 use clipboard_server::{
     InMemoryRegistry, Limits, MailboxOptions, PairingConfig, PairingRelay, PersistentMailbox,
@@ -304,6 +305,97 @@ fn ffi_smoke_mailbox_bootstrap_typed_callback() {
 
     a.shutdown().expect("a shuts down");
     b2.shutdown().expect("b shuts down");
+}
+
+/// The host history API supports the two T15 actions without bypassing Rust
+/// persistence: applying a deferred item promotes it, and clearing removes
+/// the durable entry.
+#[test]
+fn ffi_smoke_history_apply_and_clear() {
+    let mailbox_dir = tempdir();
+    let relay = Relay::start(Some(&mailbox_dir));
+    let dir_a = tempdir();
+    let dir_b = tempdir();
+    let cb_a = RecordingCallbacks::default();
+    let cb_b = RecordingCallbacks::default();
+    *cb_b.inner.mailbox_disposition.lock().unwrap() = Some(MailboxDisposition::Deferred);
+    let a = handle(&dir_a, cb_a);
+    let b = handle(&dir_b, cb_b);
+
+    pair_and_confirm(&a, &b, &relay.url());
+    b.shutdown().expect("b goes offline");
+    a.send_text("apply me later".to_owned()).expect("send succeeds");
+    wait_until(|| {
+        std::fs::read_dir(mailbox_dir.path())
+            .ok()?
+            .filter_map(|entry| entry.ok())
+            .any(|entry| entry.file_name().to_string_lossy().ends_with(".json"))
+            .then_some(())
+    });
+
+    let deferred_callbacks = RecordingCallbacks::default();
+    *deferred_callbacks
+        .inner
+        .mailbox_disposition
+        .lock()
+        .unwrap() = Some(MailboxDisposition::Deferred);
+    let b2 = handle(&dir_b, deferred_callbacks);
+    assert!(b2.pair_load().expect("pair_load succeeds"));
+    b2.start().expect("b rejoins");
+
+    let item = wait_until(|| {
+        b2.history().ok()?.into_iter().find(|item| {
+            item.source == clipboard_core::ffi::FfiHistorySource::RemoteDeferred
+        })
+    });
+    b2.history_apply(item.id.clone())
+        .expect("deferred item applies");
+    assert_eq!(
+        b2.history().expect("history remains readable")[0].source,
+        clipboard_core::ffi::FfiHistorySource::Remote
+    );
+
+    b2.history_clear().expect("history clears");
+    assert!(b2.history().expect("empty history remains readable").is_empty());
+
+    a.shutdown().expect("a shuts down");
+    b2.shutdown().expect("b shuts down");
+}
+
+/// Durable history belongs to the device, not the relay connection. A host
+/// can browse, apply, and clear it before a session is connected.
+#[test]
+fn ffi_smoke_history_remains_available_without_connection() {
+    let dir = tempdir();
+    let id = uuid::Uuid::new_v4();
+    let mut store = HistoryStore::new(dir.path().join("history")).expect("history opens");
+    store
+        .add(NewHistoryItem {
+            id,
+            ts_ms: 42,
+            source: HistorySource::RemoteDeferred,
+            content: HistoryContent::Text {
+                content: "durable while offline".to_owned(),
+            },
+        })
+        .expect("fixture persists");
+    drop(store);
+
+    let core = handle(&dir, RecordingCallbacks::default());
+    let items = core.history().expect("offline history is readable");
+    assert_eq!(items.len(), 1);
+    assert_eq!(items[0].id, id.to_string());
+
+    core.history_apply(id.to_string())
+        .expect("offline deferred item applies");
+    assert_eq!(
+        core.history().expect("promoted history")[0].source,
+        clipboard_core::ffi::FfiHistorySource::Remote
+    );
+
+    core.history_clear().expect("offline history clears");
+    assert!(core.history().expect("empty history is readable").is_empty());
+    core.shutdown().expect("core shuts down");
 }
 
 /// QA failure scenario: a callback returning Err never kills the session —

@@ -3,20 +3,30 @@ import SwiftUI
 
 public struct MenuBarContent: View {
     @ObservedObject private var model: AppModel
+    @Environment(\.openWindow) private var openWindow
 
     public init(model: AppModel) {
         self.model = model
     }
 
     public var body: some View {
-        Text(model.statusText)
+        Label(model.statusText, systemImage: statusSymbol)
         if model.connectionState == .unpaired || model.connectionState == .failed {
             Button("Pair Device", systemImage: "qrcode") {
                 model.beginPairing()
+                openWindow(id: "pairing")
             }
             .disabled(model.settings.serverURL.isEmpty)
+        } else if model.connectionState == .waitingForPeer || model.connectionState == .sasReady {
+            Button("Show Pairing", systemImage: "qrcode") {
+                openWindow(id: "pairing")
+            }
         }
         Divider()
+        Button("History", systemImage: "clock.arrow.circlepath") {
+            model.refreshHistory()
+            openWindow(id: "history")
+        }
         Button("Settings...", systemImage: "gearshape") {
             SettingsWindowBridge.open()
         }
@@ -24,6 +34,16 @@ public struct MenuBarContent: View {
             model.shutdown {
                 NSApplication.shared.terminate(nil)
             }
+        }
+    }
+
+    private var statusSymbol: String {
+        switch model.connectionState {
+        case .connected: "checkmark.circle.fill"
+        case .connecting, .reconnecting, .waitingForPeer: "arrow.triangle.2.circlepath"
+        case .sasReady: "lock.shield"
+        case .failed, .disconnected: "exclamationmark.circle"
+        default: "circle"
         }
     }
 }

@@ -10,8 +10,17 @@ struct ClipSyncMacOSApp: App {
             MenuBarContent(model: model)
         }
 
+        Window("Pair Device", id: "pairing") {
+            PairingView(model: model)
+        }
+        .windowResizability(.contentSize)
+
+        Window("Clipboard History", id: "history") {
+            HistoryView(model: model)
+        }
+
         Settings {
-            SettingsView(settings: model.settings)
+            SettingsView(model: model)
         }
     }
 }

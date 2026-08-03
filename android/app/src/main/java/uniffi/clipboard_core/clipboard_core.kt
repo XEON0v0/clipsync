@@ -781,6 +781,10 @@ internal open class UniffiVTableCallbackInterfaceCoreCallbacks(
 
 
 
+
+
+
+
 // For large crates we prevent `MethodTooLargeException` (see #2340)
 // N.B. the name of the extension is very misleading, since it is
 // rather `InterfaceTooLargeException`, caused by too many methods
@@ -797,6 +801,10 @@ internal open class UniffiVTableCallbackInterfaceCoreCallbacks(
 internal interface IntegrityCheckingUniffiLib : Library {
     // Integrity check functions only
     fun uniffi_clipboard_core_checksum_method_corehandle_history(
+): Short
+fun uniffi_clipboard_core_checksum_method_corehandle_history_apply(
+): Short
+fun uniffi_clipboard_core_checksum_method_corehandle_history_clear(
 ): Short
 fun uniffi_clipboard_core_checksum_method_corehandle_history_image_bytes(
 ): Short
@@ -890,6 +898,10 @@ fun uniffi_clipboard_core_fn_constructor_corehandle_new(`dataDir`: RustBuffer.By
 ): Pointer
 fun uniffi_clipboard_core_fn_method_corehandle_history(`ptr`: Pointer,uniffi_out_err: UniffiRustCallStatus,
 ): RustBuffer.ByValue
+fun uniffi_clipboard_core_fn_method_corehandle_history_apply(`ptr`: Pointer,`id`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus,
+): Unit
+fun uniffi_clipboard_core_fn_method_corehandle_history_clear(`ptr`: Pointer,uniffi_out_err: UniffiRustCallStatus,
+): Unit
 fun uniffi_clipboard_core_fn_method_corehandle_history_image_bytes(`ptr`: Pointer,`id`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus,
 ): RustBuffer.ByValue
 fun uniffi_clipboard_core_fn_method_corehandle_is_echo(`ptr`: Pointer,`hash`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus,
@@ -1045,6 +1057,12 @@ private fun uniffiCheckContractApiVersion(lib: IntegrityCheckingUniffiLib) {
 @Suppress("UNUSED_PARAMETER")
 private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
     if (lib.uniffi_clipboard_core_checksum_method_corehandle_history() != 57692.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_clipboard_core_checksum_method_corehandle_history_apply() != 49636.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_clipboard_core_checksum_method_corehandle_history_clear() != 15675.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_clipboard_core_checksum_method_corehandle_history_image_bytes() != 55220.toShort()) {
@@ -1527,6 +1545,16 @@ public interface CoreHandleInterface {
     fun `history`(): List<FfiHistoryItem>
 
     /**
+     * Applies a deferred history item and durably promotes its source.
+     */
+    fun `historyApply`(`id`: kotlin.String)
+
+    /**
+     * Clears all durable history entries and retained image payloads.
+     */
+    fun `historyClear`()
+
+    /**
      * Raw encoded bytes of an image history item.
      */
     fun `historyImageBytes`(`id`: kotlin.String): kotlin.ByteArray
@@ -1719,6 +1747,36 @@ open class CoreHandle: Disposable, AutoCloseable, CoreHandleInterface
     }
     )
     }
+
+
+
+    /**
+     * Applies a deferred history item and durably promotes its source.
+     */
+    @Throws(CoreException::class)override fun `historyApply`(`id`: kotlin.String)
+        =
+    callWithPointer {
+    uniffiRustCallWithError(CoreException) { _status ->
+    UniffiLib.INSTANCE.uniffi_clipboard_core_fn_method_corehandle_history_apply(
+        it, FfiConverterString.lower(`id`),_status)
+}
+    }
+
+
+
+
+    /**
+     * Clears all durable history entries and retained image payloads.
+     */
+    @Throws(CoreException::class)override fun `historyClear`()
+        =
+    callWithPointer {
+    uniffiRustCallWithError(CoreException) { _status ->
+    UniffiLib.INSTANCE.uniffi_clipboard_core_fn_method_corehandle_history_clear(
+        it, _status)
+}
+    }
+
 
 
 

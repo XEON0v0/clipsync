@@ -41,7 +41,21 @@ public final class CoreCallbackBridge: CoreCallbacks, @unchecked Sendable {
     }
 }
 
-public final class CoreService: @unchecked Sendable {
+public protocol CoreServicing: AnyObject, Sendable {
+    func initialize(completion: @escaping @MainActor @Sendable (Result<Bool, CoreExecutionFailure>) -> Void)
+    func pairBegin(serverURL: String, completion: @escaping @MainActor @Sendable (Result<String, CoreExecutionFailure>) -> Void)
+    func pairPoll(completion: @escaping @MainActor @Sendable (HostPairingSnapshot) -> Void)
+    func pairConfirm(sas: String, completion: @escaping @MainActor @Sendable (Result<Void, CoreExecutionFailure>) -> Void)
+    func pairCancel(completion: @escaping @MainActor @Sendable (Result<Void, CoreExecutionFailure>) -> Void)
+    func history(completion: @escaping @MainActor @Sendable (Result<[ClipboardHistoryEntry], CoreExecutionFailure>) -> Void)
+    func historyImage(id: String, completion: @escaping @MainActor @Sendable (Result<Data, CoreExecutionFailure>) -> Void)
+    func historyApply(id: String, completion: @escaping @MainActor @Sendable (Result<Void, CoreExecutionFailure>) -> Void)
+    func historyClear(completion: @escaping @MainActor @Sendable (Result<Void, CoreExecutionFailure>) -> Void)
+    func send(_ payload: ClipboardPayload, completion: @escaping @MainActor @Sendable (Result<UInt64, CoreExecutionFailure>) -> Void)
+    func shutdown(completion: @escaping @MainActor @Sendable () -> Void)
+}
+
+public final class CoreService: CoreServicing, @unchecked Sendable {
     private let executor: CoreExecutor
     private let dataDirectory: String
     private let callbacks: CoreCallbackBridge
@@ -68,6 +82,59 @@ public final class CoreService: @unchecked Sendable {
     public func pairBegin(serverURL: String, completion: @escaping @MainActor @Sendable (Result<String, CoreExecutionFailure>) -> Void) {
         executor.submit({ [self] in
             try requireHandle().pairBegin(serverUrl: serverURL)
+        }, completion: completion)
+    }
+
+    public func pairPoll(completion: @escaping @MainActor @Sendable (HostPairingSnapshot) -> Void) {
+        executor.submit({ [self] in
+            switch try requireHandle().pairPoll() {
+            case .unpaired:
+                return .unpaired
+            case let .offering(qrJson):
+                return .offering(qrJSON: qrJson)
+            case let .sasReady(sas):
+                return .sasReady(sas: sas)
+            case let .paired(roomId):
+                return .paired(roomID: roomId)
+            }
+        }) { result in
+            completion((try? result.get()) ?? .unpaired)
+        }
+    }
+
+    public func pairConfirm(sas: String, completion: @escaping @MainActor @Sendable (Result<Void, CoreExecutionFailure>) -> Void) {
+        executor.submit({ [self] in
+            try requireHandle().pairConfirm(sas: sas)
+        }, completion: completion)
+    }
+
+    public func pairCancel(completion: @escaping @MainActor @Sendable (Result<Void, CoreExecutionFailure>) -> Void) {
+        executor.submit({ [self] in
+            try requireHandle().pairCancel()
+        }, completion: completion)
+    }
+
+    public func history(completion: @escaping @MainActor @Sendable (Result<[ClipboardHistoryEntry], CoreExecutionFailure>) -> Void) {
+        executor.submit({ [self] in
+            try requireHandle().history().map(ClipboardHistoryEntry.init)
+        }, completion: completion)
+    }
+
+    public func historyImage(id: String, completion: @escaping @MainActor @Sendable (Result<Data, CoreExecutionFailure>) -> Void) {
+        executor.submit({ [self] in
+            try requireHandle().historyImageBytes(id: id)
+        }, completion: completion)
+    }
+
+    public func historyApply(id: String, completion: @escaping @MainActor @Sendable (Result<Void, CoreExecutionFailure>) -> Void) {
+        executor.submit({ [self] in
+            try requireHandle().historyApply(id: id)
+        }, completion: completion)
+    }
+
+    public func historyClear(completion: @escaping @MainActor @Sendable (Result<Void, CoreExecutionFailure>) -> Void) {
+        executor.submit({ [self] in
+            try requireHandle().historyClear()
         }, completion: completion)
     }
 
@@ -98,6 +165,21 @@ public final class CoreService: @unchecked Sendable {
             throw CoreExecutionFailure(message: "Core is not ready.")
         }
         return handle
+    }
+}
+
+private extension ClipboardHistoryEntry {
+    init(_ item: FfiHistoryItem) {
+        let content: ClipboardHistoryContent = switch item.kind {
+        case let .text(content): .text(content)
+        case .image: .image
+        }
+        let source: ClipboardHistorySource = switch item.source {
+        case .local: .local
+        case .remote: .remote
+        case .remoteDeferred: .remoteDeferred
+        }
+        self.init(id: item.id, tsMs: item.tsMs, content: content, source: source)
     }
 }
 

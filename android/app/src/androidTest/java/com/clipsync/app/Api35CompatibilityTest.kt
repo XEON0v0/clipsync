@@ -7,6 +7,7 @@ import androidx.test.uiautomator.Until
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -29,16 +30,11 @@ class Api35CompatibilityTest {
         assertEquals("1", PlatformTestSupport.shell("getprop sys.boot_completed"))
         assertEquals(34, PlatformTestSupport.context.applicationInfo.targetSdkVersion)
 
-        PlatformTestSupport.shell("am start -W -n com.clipsync.app/.MainActivity")
+        PlatformTestSupport.launchMainActivity()
         assertNotNull(
             "target-34 application did not boot on API 35",
             PlatformTestSupport.device.wait(Until.findObject(By.text("ClipSync")), 10_000),
         )
-        PlatformTestSupport.device.pressHome()
-
-        val serviceState = PlatformTestSupport.awaitStringPreference(SpikeContract.KEY_SERVICE_RUNNING) {
-            PlatformTestSupport.startForegroundService(SpikeContract.ACTION_HEALTH_CHECK)
-        }
-        assertEquals("true", serviceState)
+        assertTrue(PlatformTestSupport.awaitBooleanPreference(AppContract.KEY_SERVICE_RUNNING))
     }
 }

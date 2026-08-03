@@ -22,6 +22,7 @@ unset http_proxy https_proxy HTTP_PROXY HTTPS_PROXY ALL_PROXY all_proxy || true
 
 OUT_DIR="$ROOT_DIR/dist/ffi"
 GEN_DIR="$OUT_DIR/generated"
+ANDROID_GEN_DIR="$OUT_DIR/generated-android"
 HEADERS_DIR="$OUT_DIR/apple-headers"
 HOST_DIR="$OUT_DIR/host"
 DEBUG_LIB_DIR="$ROOT_DIR/target/debug"
@@ -136,11 +137,12 @@ install_name_tool -id "$DEBUG_LIB_DIR/libclipboard_core.dylib" \
     "$DEBUG_LIB_DIR/libclipboard_core.dylib"
 
 step "generate Swift + Kotlin bindings through the workspace wrapper"
-rm -rf "$GEN_DIR"
-mkdir -p "$GEN_DIR"
+rm -rf "$GEN_DIR" "$ANDROID_GEN_DIR"
+mkdir -p "$GEN_DIR" "$ANDROID_GEN_DIR"
 printf '+ cargo run --locked -p clipsync-uniffi-bindgen -- generate ...\n'
 cargo run --locked -p clipsync-uniffi-bindgen -- generate \
     --library "$DEBUG_LIB_DIR/libclipboard_core.dylib" \
+    --config "$ROOT_DIR/crates/core/uniffi-jvm.toml" \
     --language swift \
     --language kotlin \
     --out-dir "$GEN_DIR"
@@ -149,11 +151,24 @@ cargo run --locked -p clipsync-uniffi-bindgen -- generate \
     && -f "$GEN_DIR/clipboard_coreFFI.modulemap" \
     && -f "$GEN_DIR/uniffi/clipboard_core/clipboard_core.kt" ]] \
     || fail "binding artifacts incomplete"
-# UniFFI 0.29.4 emits trailing spaces in Swift declarations. Normalize only
-# whitespace so the tracked binding remains diff-clean and reproducible.
-perl -pi -e 's/[ \t]+$//' "$GEN_DIR/clipboard_core.swift"
-perl -0pi -e 's/\n+\z/\n/' "$GEN_DIR/clipboard_core.swift"
-printf 'PASS: Swift and Kotlin bindings generated\n'
+printf '+ cargo run --locked -p clipsync-uniffi-bindgen -- generate --config crates/core/uniffi.toml --language kotlin ...\n'
+cargo run --locked -p clipsync-uniffi-bindgen -- generate \
+    --library "$DEBUG_LIB_DIR/libclipboard_core.dylib" \
+    --config "$ROOT_DIR/crates/core/uniffi.toml" \
+    --language kotlin \
+    --out-dir "$ANDROID_GEN_DIR"
+[[ -f "$ANDROID_GEN_DIR/uniffi/clipboard_core/clipboard_core.kt" ]] \
+    || fail "Android Kotlin binding artifact missing"
+# UniFFI 0.29.4 emits trailing spaces in Swift and Kotlin declarations.
+# Normalize only whitespace so tracked bindings remain diff-clean and reproducible.
+for binding in \
+    "$GEN_DIR/clipboard_core.swift" \
+    "$GEN_DIR/uniffi/clipboard_core/clipboard_core.kt" \
+    "$ANDROID_GEN_DIR/uniffi/clipboard_core/clipboard_core.kt"; do
+    perl -pi -e 's/[ \t]+$//' "$binding"
+    perl -0pi -e 's/\n+\z/\n/' "$binding"
+done
+printf 'PASS: Swift, JVM Kotlin, and Android Kotlin bindings generated\n'
 
 step "Apple XCFramework (pinned Darwin targets, release staticlibs)"
 rm -rf "$HEADERS_DIR" "$OUT_DIR/apple"
@@ -208,6 +223,14 @@ else
     find "$OUT_DIR/android/jniLibs" -name 'libclipboard_core.so' -exec ls -l {} \;
     [[ $(find "$OUT_DIR/android/jniLibs" -name 'libclipboard_core.so' | wc -l) -eq 3 ]] \
         || fail "expected three ABI libraries"
+    ANDROID_BINDING_DIR="$ROOT_DIR/android/app/src/main/java/uniffi/clipboard_core"
+    ANDROID_JNI_DIR="$ROOT_DIR/android/app/src/main/jniLibs"
+    mkdir -p "$ANDROID_BINDING_DIR" "$ANDROID_JNI_DIR"
+    cp "$ANDROID_GEN_DIR/uniffi/clipboard_core/clipboard_core.kt" "$ANDROID_BINDING_DIR/clipboard_core.kt"
+    rm -rf "$ANDROID_JNI_DIR/arm64-v8a" "$ANDROID_JNI_DIR/armeabi-v7a" "$ANDROID_JNI_DIR/x86_64"
+    cp -R "$OUT_DIR/android/jniLibs/arm64-v8a" "$ANDROID_JNI_DIR/"
+    cp -R "$OUT_DIR/android/jniLibs/armeabi-v7a" "$ANDROID_JNI_DIR/"
+    cp -R "$OUT_DIR/android/jniLibs/x86_64" "$ANDROID_JNI_DIR/"
     printf 'PASS: three Android ABI libraries built\n'
 fi
 
@@ -300,9 +323,11 @@ run_with_timeout 300 \
     -PrelayUrl="$RELAY_URL" -PffiLibraryPath="$DEBUG_LIB_DIR" 2>&1 | tee "$KOTLIN_LOG"
 grep -q "PASS: Kotlin host closed loop delivered live clip over UniFFI/JNA FFI" "$KOTLIN_LOG" \
     || fail "Kotlin host closed loop did not report success"
+grep -q "PASS: Kotlin host stored deferred mailbox as durable RemoteDeferred history" "$KOTLIN_LOG" \
+    || fail "Kotlin host did not verify durable deferred mailbox history"
 
 step "summary"
-printf 'PASS: ffi feature contract, pinned uniffi 0.29.4, XCFramework slices, Swift+Kotlin host closed loops, Swift deadlock regression\n'
+printf 'PASS: ffi feature contract, pinned uniffi 0.29.4, XCFramework slices, Swift+Kotlin host closed loops, durable deferred mailbox history, Swift deadlock regression\n'
 if [[ -n "$ANDROID_UNVERIFIED" ]]; then
     printf 'UNVERIFIED: Android three-ABI .so builds — %s\n' "$ANDROID_UNVERIFIED" >&2
 fi

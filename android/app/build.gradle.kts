@@ -61,10 +61,15 @@ dependencies {
     androidTestImplementation(composeBom)
 
     implementation("androidx.activity:activity-compose:1.9.1")
+    implementation("androidx.core:core-ktx:1.13.1")
     implementation("androidx.compose.material3:material3")
+    implementation("androidx.compose.material:material-icons-core")
     implementation("androidx.compose.ui:ui")
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
+    implementation("net.java.dev.jna:jna:5.14.0@aar")
     implementation("com.google.mlkit:barcode-scanning:17.3.0")
 
+    testImplementation("junit:junit:4.13.2")
     androidTestImplementation("androidx.test.ext:junit:1.2.1")
     androidTestImplementation("androidx.test:runner:1.6.1")
     androidTestImplementation("androidx.test.uiautomator:uiautomator:2.3.0")

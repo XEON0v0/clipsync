@@ -1,4 +1,21 @@
 <resources>
     <string name="app_name">ClipSync</string>
     <string name="tile_label">ClipSync</string>
+    <string name="service_channel_name">剪贴板同步服务</string>
+    <string name="service_notification_title">ClipSync 正在接收</string>
+    <string name="service_notification_text">已启用端到端加密剪贴板同步</string>
+    <string name="mailbox_channel_name">离线剪贴板</string>
+    <string name="mailbox_notification_title">收到离线剪贴板</string>
+    <string name="mailbox_notification_text">内容已保存到历史，打开 ClipSync 后可应用</string>
+    <string name="notification_restricted">通知受限</string>
+    <string name="notification_visible">通知正常</string>
+    <string name="notification_settings">通知设置</string>
+    <string name="focus_reading">正在读取剪贴板…</string>
+    <string name="focus_sending">已读取，正在发送…</string>
+    <string name="send_success">已发送</string>
+    <string name="send_empty">剪贴板为空</string>
+    <string name="send_unsupported">暂不支持此剪贴板内容</string>
+    <string name="send_oversize">图片超过 10 MiB，未发送</string>
+    <string name="send_service_unavailable">同步服务尚未就绪</string>
+    <string name="send_failed">发送失败</string>
 </resources>

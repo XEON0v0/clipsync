@@ -5,6 +5,8 @@ import uniffi.clipboard_core.CoreHandle
 import uniffi.clipboard_core.CoreStatus
 import uniffi.clipboard_core.FfiClipContent
 import uniffi.clipboard_core.FfiClipItem
+import uniffi.clipboard_core.FfiHistoryKind
+import uniffi.clipboard_core.FfiHistorySource
 import uniffi.clipboard_core.MailboxDisposition
 import uniffi.clipboard_core.PairingSnapshot
 
@@ -14,14 +16,20 @@ import uniffi.clipboard_core.PairingSnapshot
 //
 // Args: <relay-ws-url>; JVM needs -Djna.library.path=<dir of libclipboard_core>
 
-class HostCallbacks : CoreCallbacks {
+class HostCallbacks(
+    private val mailboxDisposition: MailboxDisposition = MailboxDisposition.APPLIED,
+) : CoreCallbacks {
     val clips = ConcurrentLinkedQueue<FfiClipItem>()
+    val mailboxClips = ConcurrentLinkedQueue<FfiClipItem>()
 
     override fun onClip(item: FfiClipItem) {
         clips.add(item)
     }
 
-    override fun onMailboxClip(item: FfiClipItem): MailboxDisposition = MailboxDisposition.APPLIED
+    override fun onMailboxClip(item: FfiClipItem): MailboxDisposition {
+        mailboxClips.add(item)
+        return mailboxDisposition
+    }
 
     override fun onStatus(status: CoreStatus) {}
 
@@ -49,6 +57,15 @@ private fun waitTexts(callbacks: HostCallbacks, count: Int): List<String> {
     error("FAIL: live clip callback did not arrive")
 }
 
+private fun waitMailbox(callbacks: HostCallbacks): FfiClipItem {
+    val deadline = System.currentTimeMillis() + 10_000
+    while (System.currentTimeMillis() < deadline) {
+        callbacks.mailboxClips.peek()?.let { return it }
+        Thread.sleep(25)
+    }
+    error("FAIL: deferred mailbox callback did not arrive")
+}
+
 fun main(args: Array<String>) {
     require(args.size == 1) { "usage: ClosedLoop <relay-ws-url>" }
     val relay = args[0]
@@ -72,7 +89,29 @@ fun main(args: Array<String>) {
     val texts = waitTexts(callbacksB, 1)
     check(texts == listOf("kotlin closed loop")) { "FAIL: unexpected callback payload $texts" }
 
-    handleA.shutdown()
     handleB.shutdown()
+    Thread.sleep(200)
+    val mailboxSeq = handleA.sendText("kotlin deferred mailbox")
+    check(mailboxSeq == 2uL) { "FAIL: unexpected mailbox sequence number $mailboxSeq" }
+    Thread.sleep(200)
+
+    val resumedCallbacks = HostCallbacks(MailboxDisposition.DEFERRED)
+    val resumedB = CoreHandle(dirB, resumedCallbacks)
+    check(resumedB.pairLoad()) { "FAIL: receiver pairing record was not durable" }
+    resumedB.start()
+    val mailboxItem = waitMailbox(resumedCallbacks)
+    val historyItem = resumedB.history().singleOrNull { it.id == mailboxItem.id }
+        ?: error("FAIL: mailbox callback item missing from durable history")
+    check(historyItem.source == FfiHistorySource.REMOTE_DEFERRED) {
+        "FAIL: deferred mailbox history source was ${historyItem.source}"
+    }
+    val historyKind = historyItem.kind
+    check(historyKind is FfiHistoryKind.Text && historyKind.content == "kotlin deferred mailbox") {
+        "FAIL: deferred mailbox history content was $historyKind"
+    }
+
+    handleA.shutdown()
+    resumedB.shutdown()
     println("PASS: Kotlin host closed loop delivered live clip over UniFFI/JNA FFI")
+    println("PASS: Kotlin host stored deferred mailbox as durable RemoteDeferred history")
 }

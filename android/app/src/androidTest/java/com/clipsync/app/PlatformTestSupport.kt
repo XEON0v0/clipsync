@@ -29,6 +29,10 @@ internal object PlatformTestSupport {
     const val KEY_TEST_GATEWAY_START_ATTEMPTS = "test_gateway_start_attempts"
     const val KEY_TEST_SENT_IMAGE_SIZE = "test_sent_image_size"
     const val KEY_TEST_SENT_TEXT = "test_sent_text"
+    const val KEY_TEST_PAIR_CONFIRMED = "test_pair_confirmed"
+    const val KEY_TEST_PAIR_CLAIM = "test_pair_claim"
+    const val KEY_TEST_HISTORY_APPLIED = "test_history_applied"
+    const val VALID_TEST_QR = "clipsync-test-qr"
 
     val instrumentation = InstrumentationRegistry.getInstrumentation()
     val context: Context = instrumentation.targetContext
@@ -63,6 +67,18 @@ internal object PlatformTestSupport {
 
     fun installFailOnceGateway() {
         app.installCoreGatewayForTest(RecordingCoreGateway(preferences, failuresBeforeStart = 1))
+    }
+
+    fun installUnpairedGateway(withDeferredHistory: Boolean = false) {
+        app.resetCoreGatewayForTest()
+        preferences.edit().clear().commit()
+        app.installCoreGatewayForTest(
+            RecordingCoreGateway(
+                preferences = preferences,
+                initiallyPaired = false,
+                withDeferredHistory = withDeferredHistory,
+            ),
+        )
     }
 
     fun launchMainActivity() {
@@ -218,7 +234,27 @@ internal object PlatformTestSupport {
 private class RecordingCoreGateway(
     private val preferences: SharedPreferences,
     private val failuresBeforeStart: Int = 0,
+    initiallyPaired: Boolean = true,
+    withDeferredHistory: Boolean = false,
 ) : CoreGateway {
+    private var pairing: PairingUiState = if (initiallyPaired) {
+        PairingUiState.Paired("test-room")
+    } else {
+        PairingUiState.Unpaired
+    }
+    private var historyItems = if (withDeferredHistory) {
+        listOf(
+            CoreHistoryItem(
+                id = "00000000-0000-4000-8000-000000000001",
+                tsMs = 1_700_000_000_000,
+                content = CoreHistoryContent.Text("offline text"),
+                source = CoreHistorySource.REMOTE_DEFERRED,
+            ),
+        )
+    } else {
+        emptyList()
+    }
+
     override fun loadPairingAndStart(): Boolean {
         val attempt = preferences.getInt(PlatformTestSupport.KEY_TEST_GATEWAY_START_ATTEMPTS, 0) + 1
         preferences.edit()
@@ -227,6 +263,38 @@ private class RecordingCoreGateway(
         if (attempt <= failuresBeforeStart) error("simulated transient startup failure")
         preferences.edit().putBoolean(PlatformTestSupport.KEY_TEST_GATEWAY_STARTED, true).commit()
         return true
+    }
+
+    override fun pairingSnapshot(): PairingUiState = pairing
+
+    override fun claimPairing(qrPayload: String): String {
+        if (qrPayload != PlatformTestSupport.VALID_TEST_QR) error("invalid QR payload")
+        preferences.edit().putString(PlatformTestSupport.KEY_TEST_PAIR_CLAIM, qrPayload).commit()
+        pairing = PairingUiState.SasReady("123456")
+        return "123456"
+    }
+
+    override fun confirmPairing(sas: String) {
+        check(pairing == PairingUiState.SasReady(sas))
+        preferences.edit().putString(PlatformTestSupport.KEY_TEST_PAIR_CONFIRMED, sas).commit()
+        pairing = PairingUiState.Paired("confirmed-room")
+    }
+
+    override fun cancelPairing() {
+        pairing = PairingUiState.Unpaired
+    }
+
+    override fun history(): List<CoreHistoryItem> = historyItems
+
+    override fun historyImageBytes(id: String): ByteArray = byteArrayOf()
+
+    override fun applyHistory(id: String) {
+        preferences.edit().putString(PlatformTestSupport.KEY_TEST_HISTORY_APPLIED, id).commit()
+        historyItems = promoteAppliedHistory(historyItems, id)
+    }
+
+    override fun clearHistory() {
+        historyItems = emptyList()
     }
 
     override fun sendImage(bytes: ByteArray): ULong {

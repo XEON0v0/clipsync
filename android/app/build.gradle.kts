@@ -1,9 +1,17 @@
 import com.android.build.api.dsl.ManagedVirtualDevice
+import java.util.Properties
 
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
     id("org.jetbrains.kotlin.plugin.compose")
+}
+
+val releaseSigningFile = rootProject.file("keystore/keystore.properties")
+val releaseSigning = Properties().apply {
+    if (releaseSigningFile.isFile) {
+        releaseSigningFile.inputStream().use(::load)
+    }
 }
 
 android {
@@ -21,6 +29,27 @@ android {
 
     buildFeatures {
         compose = true
+    }
+
+    signingConfigs {
+        create("release") {
+            if (releaseSigningFile.isFile) {
+                storeFile = rootProject.file(requireNotNull(releaseSigning.getProperty("storeFile")))
+                storePassword = System.getenv("CLIPSYNC_STORE_PASSWORD")
+                    ?: requireNotNull(releaseSigning.getProperty("storePassword"))
+                keyAlias = requireNotNull(releaseSigning.getProperty("keyAlias"))
+                keyPassword = System.getenv("CLIPSYNC_KEY_PASSWORD")
+                    ?: requireNotNull(releaseSigning.getProperty("keyPassword"))
+            }
+        }
+    }
+
+    buildTypes {
+        getByName("release") {
+            if (releaseSigningFile.isFile) {
+                signingConfig = signingConfigs.getByName("release")
+            }
+        }
     }
 
     compileOptions {
@@ -61,6 +90,9 @@ dependencies {
     androidTestImplementation(composeBom)
 
     implementation("androidx.activity:activity-compose:1.9.1")
+    implementation("androidx.camera:camera-camera2:1.3.4")
+    implementation("androidx.camera:camera-lifecycle:1.3.4")
+    implementation("androidx.camera:camera-view:1.3.4")
     implementation("androidx.core:core-ktx:1.13.1")
     implementation("androidx.compose.material3:material3")
     implementation("androidx.compose.material:material-icons-core")

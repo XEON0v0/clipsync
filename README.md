@@ -52,3 +52,11 @@ cargo run --locked -p clipsync-uniffi-bindgen -- <args>
 Open at Login can be enabled in ClipSync settings. If macOS requires approval, use the displayed button to open the Login Items settings page.
 
 ClipSync is intentionally menu-bar-only (`LSUIElement`), so it does not add a Dock icon; pairing and history open as on-demand utility windows.
+
+## Android Installation
+
+1. Run `scripts/android-release.sh` to create `dist/clipboard-sync.apk`, then install that APK on the Android device.
+2. Open ClipSync, scan the QR code shown by the Mac, and confirm the same six-digit security code on both devices. Confirmation is mandatory before pairing is saved.
+3. Allow notifications and battery-optimization exemption so the foreground data-sync service can receive while the app is not open. On Xiaomi, Huawei, Honor, OPPO, OnePlus, realme, vivo, or iQOO devices, also enable ClipSync in the vendor's autostart settings shown in the app.
+
+The first release build creates `android/keystore/release.jks` and `android/keystore/keystore.properties` with mode `0600`; both paths are ignored by Git. Back up both files together in a secure location. They are required to produce upgrades signed as the same Android application. Do not paste their contents into issue reports or build logs.

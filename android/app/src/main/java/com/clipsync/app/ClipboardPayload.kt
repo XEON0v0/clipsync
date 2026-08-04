@@ -119,6 +119,15 @@ object LiveClipboardWriter {
         clipboard.setPrimaryClip(clip)
     }
 
+    fun apply(context: Context, id: String, payload: ClipboardPayload) {
+        val clipboard = context.getSystemService(ClipboardManager::class.java)
+        val clip = when (payload) {
+            is ClipboardPayload.Text -> ClipData.newPlainText("ClipSync", payload.text)
+            is ClipboardPayload.Image -> imageClip(context, id, payload.bytes)
+        }
+        clipboard.setPrimaryClip(clip)
+    }
+
     private fun imageClip(context: Context, id: String, bytes: ByteArray): ClipData {
         val mimeType = ImagePolicy.mimeType(bytes) ?: error("图片格式或尺寸不受支持")
         val file = ReceivedImageStore.save(context, id, bytes, mimeType)

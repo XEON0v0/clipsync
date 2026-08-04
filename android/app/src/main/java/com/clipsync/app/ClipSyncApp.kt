@@ -21,6 +21,9 @@ import uniffi.clipboard_core.MailboxDisposition
 data class ClipSyncUiState(
     val coreStatus: String = "未配对",
     val notificationState: NotificationState = NotificationState.VISIBLE,
+    val pairing: PairingUiState = PairingUiState.Unpaired,
+    val history: List<CoreHistoryItem> = emptyList(),
+    val historyLoading: Boolean = false,
     val lastError: String? = null,
 )
 
@@ -55,9 +58,15 @@ class ClipSyncApp : Application(), CoreCallbacks {
             } ?: return@execute
             try {
                 val paired = activeGateway.loadPairingAndStart()
-                if (!paired) {
-                    updateCoreStatus("未配对")
-                }
+                val pairing = if (paired) activeGateway.pairingSnapshot() else PairingUiState.Unpaired
+                val history = normalizeHistory(activeGateway.history())
+                mutableUiState.value = mutableUiState.value.copy(
+                    coreStatus = if (paired) "连接中" else "未配对",
+                    pairing = pairing,
+                    history = history,
+                    historyLoading = false,
+                    lastError = null,
+                )
                 val pendingSends = synchronized(coreLock) {
                     if (coreSlot.generation != generation) return@execute
                     val pending = coreSlot.pendingSends
@@ -145,6 +154,96 @@ class ClipSyncApp : Application(), CoreCallbacks {
         executor.execute { sendWithGateway(activeGateway, payload, onComplete) }
     }
 
+    fun claimPairing(qrPayload: String) {
+        mutableUiState.value = mutableUiState.value.copy(
+            pairing = PairingUiState.Claiming,
+            lastError = null,
+        )
+        executeWithGateway("无法识别 ClipSync 配对码") { gateway ->
+            val sas = gateway.claimPairing(qrPayload)
+            mutableUiState.value = mutableUiState.value.copy(
+                pairing = PairingUiState.SasReady(sas),
+                coreStatus = "等待确认",
+                lastError = null,
+            )
+        }
+    }
+
+    fun confirmPairing() {
+        val pairing = mutableUiState.value.pairing
+        if (!pairing.canConfirm || pairing !is PairingUiState.SasReady) return
+        executeWithGateway("配对确认失败") { gateway ->
+            gateway.confirmPairing(pairing.sas)
+            mutableUiState.value = mutableUiState.value.copy(
+                pairing = gateway.pairingSnapshot(),
+                coreStatus = "连接中",
+                lastError = null,
+            )
+            refreshHistoryBlocking(gateway)
+        }
+    }
+
+    fun cancelPairing() {
+        executeWithGateway("取消配对失败") { gateway ->
+            gateway.cancelPairing()
+            mutableUiState.value = mutableUiState.value.copy(
+                pairing = PairingUiState.Unpaired,
+                coreStatus = "未配对",
+                lastError = null,
+            )
+        }
+    }
+
+    fun refreshHistory() {
+        mutableUiState.value = mutableUiState.value.copy(historyLoading = true)
+        executeWithGateway("读取历史失败") { gateway -> refreshHistoryBlocking(gateway) }
+    }
+
+    fun loadHistoryImage(id: String) {
+        val item = mutableUiState.value.history.firstOrNull { it.id == id } ?: return
+        val image = item.content as? CoreHistoryContent.Image ?: return
+        if (image.bytes != null) return
+        executeWithGateway("读取历史图片失败") { gateway ->
+            val bytes = gateway.historyImageBytes(id)
+            mutableUiState.value = mutableUiState.value.copy(
+                history = mutableUiState.value.history.map { current ->
+                    if (current.id == id) current.copy(content = CoreHistoryContent.Image(bytes)) else current
+                },
+                lastError = null,
+            )
+        }
+    }
+
+    fun applyHistory(id: String) {
+        executeWithGateway("应用历史失败") { gateway ->
+            val item = mutableUiState.value.history.firstOrNull { it.id == id }
+                ?: error("历史条目不存在")
+            val payload = when (val content = item.content) {
+                is CoreHistoryContent.Text -> ClipboardPayload.Text(content.text)
+                is CoreHistoryContent.Image -> ClipboardPayload.Image(
+                    content.bytes ?: gateway.historyImageBytes(item.id),
+                )
+            }
+            LiveClipboardWriter.apply(this, item.id, payload)
+            if (item.isDeferred) gateway.applyHistory(item.id)
+            mutableUiState.value = mutableUiState.value.copy(
+                history = promoteAppliedHistory(mutableUiState.value.history, item.id),
+                lastError = null,
+            )
+        }
+    }
+
+    fun clearHistory() {
+        executeWithGateway("清空历史失败") { gateway ->
+            gateway.clearHistory()
+            mutableUiState.value = mutableUiState.value.copy(
+                history = emptyList(),
+                historyLoading = false,
+                lastError = null,
+            )
+        }
+    }
+
     fun refreshNotificationState() {
         val notificationState = AppContract.notificationState(this)
         preferences().edit()
@@ -160,26 +259,46 @@ class ClipSyncApp : Application(), CoreCallbacks {
         preferences().edit().putBoolean(AppContract.KEY_NOTIFICATION_ASKED, true).apply()
     }
 
+    fun reportUiError(message: String) {
+        mutableUiState.value = mutableUiState.value.copy(lastError = message)
+    }
+
+    fun clearUiError() {
+        mutableUiState.value = mutableUiState.value.copy(lastError = null)
+    }
+
     override fun onClip(item: FfiClipItem) {
         try {
             LiveClipboardWriter.apply(this, item)
         } catch (error: Exception) {
             throw CoreException.InvalidInput(error.message ?: "无法写入实时剪贴板")
         }
+        scheduleHistoryRefresh()
     }
 
     override fun onMailboxClip(item: FfiClipItem): MailboxDisposition {
         ClipSyncNotifications.showMailbox(this)
+        scheduleHistoryRefresh()
         return MailboxDisposition.DEFERRED
     }
 
     override fun onStatus(status: CoreStatus) {
         when (status) {
-            CoreStatus.ReadyUnpaired -> updateCoreStatus("未配对")
+            CoreStatus.ReadyUnpaired -> {
+                updateCoreStatus("未配对")
+                schedulePairingRefresh()
+            }
             CoreStatus.Offering -> updateCoreStatus("等待配对")
-            CoreStatus.SasReady -> updateCoreStatus("等待确认")
+            CoreStatus.SasReady -> {
+                updateCoreStatus("等待确认")
+                schedulePairingRefresh()
+            }
             CoreStatus.Connecting -> updateCoreStatus("连接中")
-            CoreStatus.Connected -> updateCoreStatus("已连接")
+            CoreStatus.Connected -> {
+                updateCoreStatus("已连接")
+                schedulePairingRefresh()
+                scheduleHistoryRefresh()
+            }
             CoreStatus.Reconnecting -> updateCoreStatus("重新连接中")
             CoreStatus.Disconnected -> updateCoreStatus("已断开")
             is CoreStatus.Error -> reportError(status.message, null)
@@ -234,6 +353,61 @@ class ClipSyncApp : Application(), CoreCallbacks {
             SendResult.Failed(error.message.orEmpty())
         }
         onComplete(result)
+        if (result is SendResult.Sent) refreshHistoryBlocking(gateway)
+    }
+
+    private fun executeWithGateway(errorPrefix: String, action: (CoreGateway) -> Unit) {
+        executor.execute {
+            val gateway = synchronized(coreLock) { coreSlot.gateway }
+            if (gateway == null) {
+                reportError(errorPrefix, IllegalStateException("同步服务尚未就绪"))
+                return@execute
+            }
+            runCatching { action(gateway) }
+                .onFailure { error ->
+                    if (mutableUiState.value.pairing == PairingUiState.Claiming) {
+                        mutableUiState.value = mutableUiState.value.copy(pairing = PairingUiState.Unpaired)
+                    }
+                    reportError(errorPrefix, error)
+                }
+        }
+    }
+
+    private fun refreshHistoryBlocking(gateway: CoreGateway) {
+        mutableUiState.value = mutableUiState.value.copy(
+            history = normalizeHistory(gateway.history()),
+            historyLoading = false,
+            lastError = null,
+        )
+    }
+
+    private fun scheduleHistoryRefresh() {
+        executor.schedule(
+            {
+                synchronized(coreLock) { coreSlot.gateway }?.let { gateway ->
+                    runCatching { refreshHistoryBlocking(gateway) }
+                        .onFailure { reportError("读取历史失败", it) }
+                }
+            },
+            CALLBACK_SETTLE_DELAY_MILLIS,
+            TimeUnit.MILLISECONDS,
+        )
+    }
+
+    private fun schedulePairingRefresh() {
+        executor.schedule(
+            {
+                synchronized(coreLock) { coreSlot.gateway }?.let { gateway ->
+                    runCatching {
+                        mutableUiState.value = mutableUiState.value.copy(
+                            pairing = gateway.pairingSnapshot(),
+                        )
+                    }.onFailure { reportError("读取配对状态失败", it) }
+                }
+            },
+            CALLBACK_SETTLE_DELAY_MILLIS,
+            TimeUnit.MILLISECONDS,
+        )
     }
 
     private fun scheduleCoreRetry(generation: Long, retryToken: Int, delayMillis: Long) {
@@ -268,6 +442,7 @@ class ClipSyncApp : Application(), CoreCallbacks {
     private fun preferences() = getSharedPreferences(AppContract.PREFERENCES, Context.MODE_PRIVATE)
 
     companion object {
+        private const val CALLBACK_SETTLE_DELAY_MILLIS = 100L
         private const val MAX_PENDING_SENDS = 8
         private const val TAG = "ClipSyncApp"
     }

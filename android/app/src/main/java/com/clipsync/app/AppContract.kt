@@ -13,6 +13,7 @@ enum class NotificationState(val persistedValue: String) {
 object AppContract {
     const val CORE_DIRECTORY = "core"
     const val FILE_PROVIDER_AUTHORITY_SUFFIX = ".files"
+    const val HISTORY_LIMIT = 50
     const val MAILBOX_CHANNEL = "clipsync_mailbox"
     const val MAILBOX_NOTIFICATION_ID = 1002
     const val MAX_IMAGE_BYTES = 10 * 1024 * 1024

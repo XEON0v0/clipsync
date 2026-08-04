@@ -12,7 +12,7 @@ build/
 .gradle/
 **/.gradle/
 .build/
-macos/Frameworks/
+/macos/Frameworks
 DerivedData/
 *.xcuserstate
 *.xcworkspace/xcuserdata/

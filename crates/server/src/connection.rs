@@ -127,6 +127,14 @@ impl Connection<'_> {
                         .rate_limits
                         .add_bytes(self.client_ip, text.len() as u64)
                     {
+                        eprintln!(
+                            "{}",
+                            rate_limit_log(
+                                RateLimitKind::Bytes,
+                                self.client_ip,
+                                self.connection_id
+                            )
+                        );
                         self.outbox
                             .error_and_close("rate_limited", "per-IP byte budget exceeded");
                         break;
@@ -291,6 +299,10 @@ impl Connection<'_> {
     ) -> Result<(String, String), Box<Frame>> {
         let nonce = challenge.ok_or_else(|| error_frame("bad_auth", "no active join challenge"))?;
         if !self.state.rate_limits.check_join(self.client_ip) {
+            eprintln!(
+                "{}",
+                rate_limit_log(RateLimitKind::Join, self.client_ip, self.connection_id)
+            );
             return Err(error_frame("rate_limited", "join attempts exceeded"));
         }
         let signature = STANDARD
@@ -347,6 +359,31 @@ fn error_frame(code: &str, message: &str) -> Box<Frame> {
     })
 }
 
+enum RateLimitKind {
+    Bytes,
+    Join,
+}
+
+impl RateLimitKind {
+    const fn as_str(&self) -> &'static str {
+        match self {
+            Self::Bytes => "bytes",
+            Self::Join => "join",
+        }
+    }
+}
+
+fn rate_limit_log(
+    kind: RateLimitKind,
+    effective_ip: IpAddr,
+    connection_id: ConnectionId,
+) -> String {
+    let kind = kind.as_str();
+    format!(
+        "event=rate_limited kind={kind} effective_ip={effective_ip} connection_id={connection_id}"
+    )
+}
+
 /// Writes outbound units to the websocket until a close marker, a forced close, or a
 /// send failure. The test-only writer gate throttles sends; a forced close always
 /// wins so a stalled writer cannot keep a disconnected peer open.
@@ -398,3 +435,16 @@ async fn run_writer(
 
 /// Re-export used by the pairing seam signature.
 pub type ConnectionMap = Connections;
+
+#[cfg(test)]
+mod tests {
+    use super::{RateLimitKind, rate_limit_log};
+
+    #[test]
+    fn rate_limit_log_is_structured_and_names_the_effective_ip() {
+        assert_eq!(
+            rate_limit_log(RateLimitKind::Join, "172.30.0.1".parse().unwrap(), 42),
+            "event=rate_limited kind=join effective_ip=172.30.0.1 connection_id=42"
+        );
+    }
+}

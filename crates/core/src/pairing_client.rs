@@ -217,6 +217,20 @@ impl PairingClient {
         let client = Self::connect(store, &record.server).await?;
         join_live(client.identity, record, client.challenge, client.socket).await
     }
+
+    /// Rejoins using the durable pairing record and a caller-provided TLS
+    /// configuration, consuming exactly one bootstrap frame before live mode.
+    ///
+    /// This is the local/test CA counterpart to [`Self::join`]. Production
+    /// callers should continue to use the web-PKI-only default path.
+    pub async fn join_with_tls(
+        store: &PairingStore,
+        tls: Arc<rustls::ClientConfig>,
+    ) -> Result<LiveLink, TransportError> {
+        let record = store.load_pairing()?.ok_or(TransportError::NotPaired)?;
+        let client = Self::connect_with_tls(store, &record.server, tls).await?;
+        join_live(client.identity, record, client.challenge, client.socket).await
+    }
 }
 
 fn relay_websocket_config() -> WebSocketConfig {

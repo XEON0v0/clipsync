@@ -1295,7 +1295,7 @@ async fn e2e_16_wss_proxy_injected_ca_and_xff_rewrite() {
     let config = ServerConfig {
         trusted_proxy: Some(IpNet::parse("127.0.0.1").expect("trusted proxy")),
         limits: Limits {
-            join_attempts_per_minute: 4,
+            join_attempts_per_minute: 5,
             ..Limits::default()
         },
         ..ServerConfig::default()
@@ -1325,9 +1325,17 @@ async fn e2e_16_wss_proxy_injected_ca_and_xff_rewrite() {
         ClipContent::Text("over wss".to_owned())
     );
 
+    // A durable pairing can rejoin through the same locally trusted WSS path;
+    // the normal join API intentionally trusts only public web PKI roots.
+    link_b.close().await.expect("close TLS receiver");
+    let link_b = PairingClient::join_with_tls(&b.store, client_tls.clone())
+        .await
+        .expect("rejoin over wss with injected CA");
+    assert!(link_b.bootstrap_clip().is_none());
+
     // Forged XFF must be overwritten with the real TLS TCP peer (127.0.0.1):
     // three joins carrying three distinct forged addresses share the loopback
-    // join budget (4/min, 2 already spent pairing) and the third is limited.
+    // join budget (5/min, 3 already spent pairing/rejoining) and the third is limited.
     // Had the forged values been honored, each would own a fresh budget.
     for (index, forged) in ["203.0.113.1", "203.0.113.2", "203.0.113.3"]
         .iter()

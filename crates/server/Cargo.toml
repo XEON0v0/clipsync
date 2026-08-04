@@ -26,6 +26,7 @@ ed25519-dalek.workspace = true
 futures-util.workspace = true
 rcgen = "=0.14.8"
 rustls.workspace = true
+sha2.workspace = true
 tempfile = "=3.27.0"
 tokio-rustls = "=0.26.4"
 tokio-tungstenite.workspace = true

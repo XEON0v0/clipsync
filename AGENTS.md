@@ -45,3 +45,21 @@ The user shell intentionally loads `~/.config/clipsync/external-dev-env.zsh`
 globally because Cargo, Rustup, Gradle, and the Android SDK are shared stores;
 this prevents unrelated builds from silently recreating those stores on the
 internal disk. The repository helper adds only workspace-specific link checks.
+
+## Environment notes added by the F3 clean-room run (2026-08-06)
+
+- Emulator AVDs live on the external volume (`$ANDROID_AVD_HOME`) and are NOT
+  migrated automatically. `scripts/test-android-core.sh` and
+  `scripts/spike-android.sh` assume AVDs named `clipsync-spike-api29/34/35`
+  (pixel_2, google_apis, arm64-v8a); `spike-android.sh` creates them on demand,
+  `test-android-core.sh` does not. After a fresh migration, create them once
+  with `avdmanager create avd --name clipsync-spike-api<N> --package
+  "system-images;android-<N>;google_apis;arm64-v8a" --device pixel_2`.
+- Colima's daemon is configured on the external volume with Docker Hub
+  registry mirrors (daocloud/1ms/xuanyuan/dockerproxy) and mounts
+  `/Volumes/ClipSyncDev` writable so compose bind-mounts (e.g. the local
+  Caddyfile in `live-smoke.sh`) work from external-volume checkouts.
+- When Docker builds crawl in China, export
+  `CARGO_REGISTRY_CONFIG=deploy/cargo-config.rsproxy.toml` so the pinned
+  Dockerfile compiles crates through rsproxy instead of crates.io directly.
+

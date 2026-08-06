@@ -35,8 +35,11 @@ class NotificationPermissionFeasibilityTest {
 
     @Test
     fun firstLaunchPermissionBranchKeepsServiceRunningAndSurfacesStatus() {
+        // Harness scripts pass the branch explicitly; bare managed-device runs get no
+        // arguments and always boot a fresh emulator in the denied state, so they take
+        // the restricted branch.
         val expected = InstrumentationRegistry.getArguments().getString("expectedNotificationState")
-            ?: throw AssertionError("expectedNotificationState instrumentation argument is required")
+            ?: NotificationState.RESTRICTED.persistedValue
         assertEquals(
             PackageManager.PERMISSION_DENIED,
             PlatformTestSupport.context.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS),

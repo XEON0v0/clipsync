@@ -18,6 +18,10 @@ class Api35CompatibilityTest {
     fun givenCleanApi35Fixture() {
         org.junit.Assume.assumeTrue("compatibility fixture requires API 35", Build.VERSION.SDK_INT == 35)
         PlatformTestSupport.resetFixture()
+        // Same precondition as the API 34 boot harness: notification permission is
+        // granted up front so the first-launch permission dialog does not cover the
+        // activity under test.
+        PlatformTestSupport.shell("pm grant com.clipsync.app android.permission.POST_NOTIFICATIONS")
     }
 
     @After

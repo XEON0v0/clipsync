@@ -13,8 +13,9 @@ AVDMANAGER="$ANDROID_HOME/cmdline-tools/latest/bin/avdmanager"
 EMULATOR="$ANDROID_HOME/emulator/emulator"
 AAPT2="$ANDROID_HOME/build-tools/34.0.0/aapt2"
 GRADLE_PROXY_ARGS=(-Dhttp.proxyHost= -Dhttp.proxyPort=80 -Dhttps.proxyHost= -Dhttps.proxyPort=443)
-APP_APK="$ANDROID_DIR/app/build/outputs/apk/debug/app-debug.apk"
-TEST_APK="$ANDROID_DIR/app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk"
+APP_APK_DIR="${CLIPSYNC_ANDROID_BUILD_ROOT:+$CLIPSYNC_ANDROID_BUILD_ROOT/app/outputs/apk}"
+APP_APK="${APP_APK_DIR:-$ANDROID_DIR/app/build/outputs/apk}/debug/app-debug.apk"
+TEST_APK="${APP_APK_DIR:-$ANDROID_DIR/app/build/outputs/apk}/androidTest/debug/app-debug-androidTest.apk"
 RUNNER="com.clipsync.app.test/androidx.test.runner.AndroidJUnitRunner"
 
 CURRENT_PID=""
@@ -137,7 +138,7 @@ run_focus_failure_injection() {
         printf 'FAIL: failure injection did not move the read to onResume\n' >&2
         return 1
     fi
-    "$SCRATCH_DIR/android/gradlew" --no-daemon "${GRADLE_PROXY_ARGS[@]}" \
+    env -u CLIPSYNC_ANDROID_BUILD_ROOT "$SCRATCH_DIR/android/gradlew" --no-daemon "${GRADLE_PROXY_ARGS[@]}" \
         -p "$SCRATCH_DIR/android" :app:assembleDebug :app:assembleDebugAndroidTest
     "$ADB" -s "$serial" install -r -t "$SCRATCH_DIR/android/app/build/outputs/apk/debug/app-debug.apk"
     "$ADB" -s "$serial" install -r -t "$SCRATCH_DIR/android/app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk"

@@ -87,7 +87,13 @@ export CLIPSYNC_STORE_PASSWORD CLIPSYNC_KEY_PASSWORD
 printf 'PASS: JKS reopened with keytool\n'
 
 (cd "$ANDROID_DIR" && ./gradlew --no-daemon clean assembleRelease)
-SIGNED_APK="$ANDROID_DIR/app/build/outputs/apk/release/app-release.apk"
+# With the external-storage build redirect active, the app build directory is
+# $CLIPSYNC_ANDROID_BUILD_ROOT/app instead of android/app/build.
+if [[ -n "${CLIPSYNC_ANDROID_BUILD_ROOT:-}" ]]; then
+    SIGNED_APK="$CLIPSYNC_ANDROID_BUILD_ROOT/app/outputs/apk/release/app-release.apk"
+else
+    SIGNED_APK="$ANDROID_DIR/app/build/outputs/apk/release/app-release.apk"
+fi
 [[ -f "$SIGNED_APK" ]] || fail "signed release APK missing"
 cp "$SIGNED_APK" "$DIST_FILE"
 chmod 600 "$DIST_FILE"

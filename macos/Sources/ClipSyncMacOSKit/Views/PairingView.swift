@@ -4,6 +4,7 @@ import SwiftUI
 
 public struct PairingView: View {
     @ObservedObject private var model: AppModel
+    @State private var pendingAction: PairingManagementAction?
 
     public init(model: AppModel) {
         self.model = model
@@ -11,27 +12,77 @@ public struct PairingView: View {
 
     public var body: some View {
         VStack(spacing: 18) {
-            switch model.connectionState {
-            case .waitingForPeer:
-                qrOffer
-            case .sasReady:
-                sasConfirmation
-            case .connecting, .connected:
-                Label(model.statusText, systemImage: "checkmark.circle.fill")
-                    .font(.title3)
-                    .foregroundStyle(.green)
-            case .failed:
-                PairingEmptyState(
-                    title: "Pairing unavailable",
-                    systemImage: "exclamationmark.triangle",
-                    detail: model.lastError ?? "The relay could not complete pairing."
-                )
-            default:
-                PairingEmptyState(title: "No active pairing", systemImage: "qrcode", detail: nil)
+            if model.isPaired {
+                pairedDevice
+            } else {
+                switch model.connectionState {
+                case .waitingForPeer:
+                    qrOffer
+                case .sasReady:
+                    sasConfirmation
+                case .failed:
+                    PairingEmptyState(
+                        title: "Pairing unavailable",
+                        systemImage: "exclamationmark.triangle",
+                        detail: model.lastError ?? "The relay could not complete pairing."
+                    )
+                default:
+                    PairingEmptyState(title: "No active pairing", systemImage: "qrcode", detail: nil)
+                }
             }
         }
         .padding(24)
         .frame(width: 380, height: 430)
+        .alert(item: $pendingAction) { action in
+            let presentation = action.presentation
+            return Alert(
+                title: Text(presentation.title),
+                message: Text(presentation.message),
+                primaryButton: .destructive(Text(presentation.confirmTitle)) {
+                    action.perform(on: model)
+                },
+                secondaryButton: .cancel()
+            )
+        }
+    }
+
+    private var pairedDevice: some View {
+        VStack(spacing: 18) {
+            Image(systemName: "link.circle.fill")
+                .font(.system(size: 48))
+                .foregroundStyle(model.connectionState == .connected ? .green : .secondary)
+            Text("Android device paired")
+                .font(.title3.weight(.semibold))
+            Label(model.statusText, systemImage: connectionSymbol)
+                .foregroundStyle(.secondary)
+            if model.pairingResetInProgress {
+                ProgressView()
+                    .controlSize(.small)
+            }
+            VStack(spacing: 10) {
+                Button("Replace Paired Device...", systemImage: "qrcode") {
+                    pendingAction = .replace
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(model.pairingResetInProgress)
+
+                Button(role: .destructive) {
+                    pendingAction = .unpair
+                } label: {
+                    Label("Unpair Device...", systemImage: "link.badge.minus")
+                }
+                .disabled(model.pairingResetInProgress)
+            }
+        }
+    }
+
+    private var connectionSymbol: String {
+        switch model.connectionState {
+        case .connected: "checkmark.circle.fill"
+        case .connecting, .reconnecting: "arrow.triangle.2.circlepath"
+        case .failed, .disconnected: "exclamationmark.circle"
+        default: "circle"
+        }
     }
 
     private var qrOffer: some View {
@@ -86,6 +137,40 @@ public struct PairingView: View {
                 .disabled(model.pairingSAS == nil)
             }
             .frame(maxWidth: 280)
+        }
+    }
+}
+
+private enum PairingManagementAction: String, Identifiable {
+    case unpair
+    case replace
+
+    var id: String { rawValue }
+
+    var presentation: (title: String, message: String, confirmTitle: String) {
+        switch self {
+        case .unpair:
+            (
+                title: "Unpair Android device?",
+                message: "This Mac will remove the current pairing. Clipboard history will remain on this Mac.",
+                confirmTitle: "Unpair"
+            )
+        case .replace:
+            (
+                title: "Replace paired Android device?",
+                message: "The current pairing will be removed before a new pairing code is created.",
+                confirmTitle: "Replace Device"
+            )
+        }
+    }
+
+    @MainActor
+    func perform(on model: AppModel) {
+        switch self {
+        case .unpair:
+            model.unpair()
+        case .replace:
+            model.replacePairedDevice()
         }
     }
 }

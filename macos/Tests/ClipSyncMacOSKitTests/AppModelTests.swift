@@ -42,6 +42,84 @@ final class AppModelTests: XCTestCase {
         XCTAssertNil(model.pairingQRJSON)
     }
 
+    func testUnpairResetsDurablePairingAndReturnsToUnpaired() {
+        let core = FakeCoreService()
+        core.initializeResult = .success(true)
+        let model = makeModel(core: core)
+        model.receiveStatus(.connected)
+
+        model.unpair()
+
+        XCTAssertEqual(core.resetPairingCount, 1)
+        XCTAssertFalse(model.isPaired)
+        XCTAssertEqual(model.connectionState, .unpaired)
+        XCTAssertEqual(model.statusText, "Not paired")
+        XCTAssertNil(model.pairingQRJSON)
+        XCTAssertNil(model.pairingSAS)
+    }
+
+    func testReplacePairedDeviceResetsThenStartsFreshPairingOffer() {
+        let core = FakeCoreService()
+        core.initializeResult = .success(true)
+        core.beginResult = .success(#"{"server":"wss://sync.example/ws","code":"NEW234"}"#)
+        let model = makeModel(core: core)
+        model.receiveStatus(.connected)
+
+        model.replacePairedDevice()
+
+        XCTAssertEqual(core.resetPairingCount, 1)
+        XCTAssertEqual(core.begunServerURLs, ["wss://sync.example/ws"])
+        XCTAssertFalse(model.isPaired)
+        XCTAssertEqual(model.connectionState, .waitingForPeer)
+        XCTAssertEqual(model.pairingCode, "NEW234")
+        XCTAssertNotNil(model.pairingQRJSON)
+    }
+
+    func testPairedDeviceRemainsManageableWhenInitialRelayConnectionFails() {
+        let core = FakeCoreService()
+        core.initializeResult = .failure(.init(message: "relay unavailable"))
+        let model = makeModel(core: core)
+
+        model.receiveStatus(.connecting)
+        model.receiveStatus(.error(message: "relay unavailable"))
+
+        XCTAssertTrue(model.isPaired)
+        XCTAssertEqual(model.connectionState, .failed)
+        XCTAssertEqual(model.lastError, "relay unavailable")
+    }
+
+    func testReplacePairedDeviceDoesNotStartPairingWhenResetFails() {
+        let core = FakeCoreService()
+        core.initializeResult = .success(true)
+        core.resetPairingResult = .failure(.init(message: "reset failed"))
+        core.beginResult = .success(#"{"server":"wss://sync.example/ws","code":"NEW234"}"#)
+        let model = makeModel(core: core)
+        model.receiveStatus(.connected)
+
+        model.replacePairedDevice()
+
+        XCTAssertEqual(core.resetPairingCount, 1)
+        XCTAssertTrue(core.begunServerURLs.isEmpty)
+        XCTAssertTrue(model.isPaired)
+        XCTAssertEqual(model.connectionState, .failed)
+        XCTAssertEqual(model.lastError, "reset failed")
+    }
+
+    func testDelayedReadyUnpairedDoesNotDismissFreshReplacementOffer() {
+        let core = FakeCoreService()
+        core.initializeResult = .success(true)
+        core.beginResult = .success(#"{"server":"wss://sync.example/ws","code":"NEW234"}"#)
+        let model = makeModel(core: core)
+        model.receiveStatus(.connected)
+        model.replacePairedDevice()
+
+        model.receiveStatus(.readyUnpaired)
+
+        XCTAssertEqual(model.connectionState, .waitingForPeer)
+        XCTAssertEqual(model.pairingCode, "NEW234")
+        XCTAssertNotNil(model.pairingQRJSON)
+    }
+
     func testHistorySelectionWritesClipboardAndPromotesOnlyDeferredItem() {
         let core = FakeCoreService()
         let clipboard = ModelFakeClipboard()
@@ -158,19 +236,24 @@ final class AppModelTests: XCTestCase {
 }
 
 private final class FakeCoreService: CoreServicing, @unchecked Sendable {
+    var initializeResult: Result<Bool, CoreExecutionFailure> = .success(false)
     var beginResult: Result<String, CoreExecutionFailure> = .failure(.init(message: "not configured"))
+    var resetPairingResult: Result<Void, CoreExecutionFailure> = .success(())
     var snapshot: HostPairingSnapshot = .unpaired
     var historyResult: Result<[ClipboardHistoryEntry], CoreExecutionFailure> = .success([])
     private(set) var confirmedSAS: [String] = []
+    private(set) var begunServerURLs: [String] = []
     private(set) var cancelCount = 0
     private(set) var appliedHistoryIDs: [String] = []
     private(set) var clearHistoryCount = 0
+    private(set) var resetPairingCount = 0
 
     func initialize(completion: @escaping @MainActor @Sendable (Result<Bool, CoreExecutionFailure>) -> Void) {
-        MainActor.assumeIsolated { completion(.success(false)) }
+        MainActor.assumeIsolated { completion(initializeResult) }
     }
 
     func pairBegin(serverURL: String, completion: @escaping @MainActor @Sendable (Result<String, CoreExecutionFailure>) -> Void) {
+        begunServerURLs.append(serverURL)
         MainActor.assumeIsolated { completion(beginResult) }
     }
 
@@ -204,6 +287,11 @@ private final class FakeCoreService: CoreServicing, @unchecked Sendable {
     func historyClear(completion: @escaping @MainActor @Sendable (Result<Void, CoreExecutionFailure>) -> Void) {
         clearHistoryCount += 1
         MainActor.assumeIsolated { completion(.success(())) }
+    }
+
+    func resetPairing(completion: @escaping @MainActor @Sendable (Result<Void, CoreExecutionFailure>) -> Void) {
+        resetPairingCount += 1
+        MainActor.assumeIsolated { completion(resetPairingResult) }
     }
 
     func send(_ payload: ClipboardPayload, completion: @escaping @MainActor @Sendable (Result<UInt64, CoreExecutionFailure>) -> Void) {

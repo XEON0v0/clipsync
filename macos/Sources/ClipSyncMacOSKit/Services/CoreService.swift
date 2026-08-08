@@ -52,6 +52,7 @@ public protocol CoreServicing: AnyObject, Sendable {
     func historyApply(id: String, completion: @escaping @MainActor @Sendable (Result<Void, CoreExecutionFailure>) -> Void)
     func historyClear(completion: @escaping @MainActor @Sendable (Result<Void, CoreExecutionFailure>) -> Void)
     func send(_ payload: ClipboardPayload, completion: @escaping @MainActor @Sendable (Result<UInt64, CoreExecutionFailure>) -> Void)
+    func resetPairing(completion: @escaping @MainActor @Sendable (Result<Void, CoreExecutionFailure>) -> Void)
     func shutdown(completion: @escaping @MainActor @Sendable () -> Void)
 }
 
@@ -146,6 +147,12 @@ public final class CoreService: CoreServicing, @unchecked Sendable {
             case let .image(png, _):
                 return try requireHandle().sendImage(bytes: png)
             }
+        }, completion: completion)
+    }
+
+    public func resetPairing(completion: @escaping @MainActor @Sendable (Result<Void, CoreExecutionFailure>) -> Void) {
+        executor.submit({ [self] in
+            try requireHandle().resetPairing()
         }, completion: completion)
     }
 

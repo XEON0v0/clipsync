@@ -11,7 +11,12 @@ public struct MenuBarContent: View {
 
     public var body: some View {
         Label(model.statusText, systemImage: statusSymbol)
-        if model.connectionState == .unpaired || model.connectionState == .failed {
+        if model.isPaired {
+            Button("Manage Pairing...", systemImage: "link") {
+                Self.activateApp()
+                openWindow(id: "pairing")
+            }
+        } else if model.connectionState == .unpaired || model.connectionState == .failed {
             Button("Pair Device", systemImage: "qrcode") {
                 model.beginPairing()
                 openWindow(id: "pairing")
@@ -35,6 +40,12 @@ public struct MenuBarContent: View {
                 NSApplication.shared.terminate(nil)
             }
         }
+    }
+
+    /// Brings the agent app's windows to the front before opening a window.
+    /// Menu-bar menu selections do not reliably activate an `LSUIElement` app.
+    private static func activateApp() {
+        NSApplication.shared.activate(ignoringOtherApps: true)
     }
 
     private var statusSymbol: String {

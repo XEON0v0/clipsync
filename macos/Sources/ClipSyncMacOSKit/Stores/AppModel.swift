@@ -16,6 +16,8 @@ public enum AppConnectionState: Equatable, Sendable {
 @MainActor
 public final class AppModel: ObservableObject, CoreCallbackSink {
     @Published public private(set) var connectionState: AppConnectionState = .starting
+    @Published public private(set) var isPaired = false
+    @Published public private(set) var pairingResetInProgress = false
     @Published public private(set) var statusText = "Starting..."
     @Published public private(set) var lastError: String?
     @Published public private(set) var pairingQRJSON: String?
@@ -93,6 +95,7 @@ public final class AppModel: ObservableObject, CoreCallbackSink {
             guard let self else { return }
             switch result {
             case let .success(paired):
+                isPaired = paired
                 if !paired {
                     connectionState = .unpaired
                     statusText = "Not paired"
@@ -151,6 +154,7 @@ public final class AppModel: ObservableObject, CoreCallbackSink {
             guard let self else { return }
             switch result {
             case .success:
+                isPaired = true
                 connectionState = .connecting
                 statusText = "Connecting..."
             case let .failure(error):
@@ -167,6 +171,37 @@ public final class AppModel: ObservableObject, CoreCallbackSink {
                 clearPairingPresentation()
                 connectionState = .unpaired
                 statusText = "Not paired"
+            case let .failure(error):
+                showError(error.message)
+            }
+        }
+    }
+
+    public func unpair() {
+        resetPairing(startNewPairing: false)
+    }
+
+    public func replacePairedDevice() {
+        resetPairing(startNewPairing: true)
+    }
+
+    private func resetPairing(startNewPairing: Bool) {
+        guard !pairingResetInProgress else { return }
+        pairingResetInProgress = true
+        statusText = startNewPairing ? "Replacing paired device..." : "Removing paired device..."
+        core.resetPairing { [weak self] result in
+            guard let self else { return }
+            pairingResetInProgress = false
+            switch result {
+            case .success:
+                isPaired = false
+                clearPairingPresentation()
+                connectionState = .unpaired
+                statusText = "Not paired"
+                lastError = nil
+                if startNewPairing {
+                    beginPairing()
+                }
             case let .failure(error):
                 showError(error.message)
             }
@@ -263,6 +298,8 @@ public final class AppModel: ObservableObject, CoreCallbackSink {
     public func receiveStatus(_ status: CoreStatus) {
         switch status {
         case .readyUnpaired:
+            guard connectionState != .waitingForPeer, connectionState != .sasReady else { return }
+            isPaired = false
             clearPairingPresentation()
             connectionState = .unpaired
             statusText = "Not paired"
@@ -274,9 +311,11 @@ public final class AppModel: ObservableObject, CoreCallbackSink {
             statusText = "Confirm security code"
             refreshPairingSnapshot()
         case .connecting:
+            isPaired = true
             connectionState = .connecting
             statusText = "Connecting..."
         case .connected:
+            isPaired = true
             monitor.markConnected()
             clearPairingPresentation()
             connectionState = .connected
@@ -312,6 +351,7 @@ public final class AppModel: ObservableObject, CoreCallbackSink {
                 connectionState = .unpaired
                 statusText = "Not paired"
             case .paired:
+                isPaired = true
                 connectionState = .connecting
                 statusText = "Connecting..."
             }

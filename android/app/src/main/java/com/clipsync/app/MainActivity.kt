@@ -18,6 +18,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -34,6 +35,7 @@ import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -56,6 +58,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -360,10 +363,13 @@ private fun HistoryPane(state: ClipSyncUiState, app: ClipSyncApp) {
                 Text("暂无历史")
             }
         } else {
-            LazyColumn(modifier = Modifier.fillMaxSize()) {
+            LazyColumn(
+                modifier = Modifier.fillMaxSize(),
+                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
                 items(state.history, key = CoreHistoryItem::id) { item ->
                     HistoryRow(item, app)
-                    HorizontalDivider()
                 }
             }
         }
@@ -392,46 +398,50 @@ private fun HistoryRow(item: CoreHistoryItem, app: ClipSyncApp) {
     LaunchedEffect(item.id, image?.bytes) {
         if (image != null && image.bytes == null) app.loadHistoryImage(item.id)
     }
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable { app.applyHistory(item.id) }
-            .padding(horizontal = 20.dp, vertical = 12.dp),
-        horizontalArrangement = Arrangement.spacedBy(14.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        when (val content = item.content) {
-            is CoreHistoryContent.Text -> Text(
-                content.text,
-                modifier = Modifier.weight(1f),
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
-            )
-            is CoreHistoryContent.Image -> {
-                val bitmap = remember(content.bytes) {
-                    content.bytes?.let(::decodeHistoryThumbnail)
-                }
-                if (bitmap == null) {
-                    Box(Modifier.size(64.dp), contentAlignment = Alignment.Center) {
-                        CircularProgressIndicator(modifier = Modifier.size(24.dp))
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable { app.applyHistory(item.id) }
+                .padding(horizontal = 20.dp, vertical = 12.dp),
+            horizontalArrangement = Arrangement.spacedBy(14.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            when (val content = item.content) {
+                is CoreHistoryContent.Text -> Text(
+                    content.text,
+                    modifier = Modifier.weight(1f),
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                is CoreHistoryContent.Image -> {
+                    val bitmap = remember(content.bytes) {
+                        content.bytes?.let(::decodeHistoryThumbnail)
                     }
-                } else {
-                    Image(
-                        bitmap = bitmap.asImageBitmap(),
-                        contentDescription = "历史图片",
-                        modifier = Modifier.size(64.dp),
-                    )
+                    if (bitmap == null) {
+                        Box(Modifier.size(64.dp), contentAlignment = Alignment.Center) {
+                            CircularProgressIndicator(modifier = Modifier.size(24.dp))
+                        }
+                    } else {
+                        Image(
+                            bitmap = bitmap.asImageBitmap(),
+                            contentDescription = "历史图片",
+                            modifier = Modifier
+                                .size(64.dp)
+                                .clip(MaterialTheme.shapes.medium),
+                        )
+                    }
+                    Spacer(Modifier.weight(1f))
                 }
-                Spacer(Modifier.weight(1f))
             }
-        }
-        Column(horizontalAlignment = Alignment.End) {
-            Text(item.sourceLabel, style = MaterialTheme.typography.labelMedium)
-            Text(
-                DateFormat.getDateTimeInstance(DateFormat.SHORT, DateFormat.SHORT)
-                    .format(Date(item.tsMs)),
-                style = MaterialTheme.typography.labelSmall,
-            )
+            Column(horizontalAlignment = Alignment.End) {
+                Text(item.sourceLabel, style = MaterialTheme.typography.labelMedium)
+                Text(
+                    DateFormat.getDateTimeInstance(DateFormat.SHORT, DateFormat.SHORT)
+                        .format(Date(item.tsMs)),
+                    style = MaterialTheme.typography.labelSmall,
+                )
+            }
         }
     }
 }

@@ -6,9 +6,9 @@
 
 **Architecture:** 新建单一主题入口 `ui/theme/Theme.kt` 的 `ClipSyncTheme`（内部使用 `MaterialExpressiveTheme`，形状/动效用 Expressive 默认值，颜色按 API 31+ 动态取色、低版本回落 M3 基线紫色板），三个界面（`MainActivity`、`FocusClipboardActivity`、`QrScannerView` 所在的配对页）统一接入；历史列表行从「纯行 + 分隔线」改为圆角 `Card`；`FocusClipboardActivity` 从 View TextView 转为 Compose。
 
-**Tech Stack:** Jetpack Compose（BOM 2026.05.01 / Compose 1.11.x）、androidx.compose.material3 **1.5.0-alpha21**（显式 pin，见 Task 1 原因）、Kotlin 2.2.21、AGP 8.8.2、Gradle 8.13、compileSdk 36、targetSdk 35、minSdk 29。
+**Tech Stack:** Jetpack Compose（BOM 2026.05.01 / Compose 1.11.x）、androidx.compose.material3 **1.5.0-alpha13**（显式 pin，见 Task 1 原因）、Kotlin 2.2.21、AGP 8.8.2、Gradle 8.13、compileSdk 36、targetSdk 35、minSdk 29。
 
-> 路线决策（2026-08-10 用户确认）：1.5.0-alpha24 的传递依赖 compose 1.12.0-beta01 硬性要求 compileSdk ≥ 37 且 AGP ≥ 9.1.0，超出本计划范围。改用 alpha21（有真实项目验证其配 BOM 2026.05.01 可构建）+ compileSdk 36，AGP/Gradle 不动。
+> 路线决策（2026-08-10 用户确认）：1.5.0-alpha24 的传递依赖 compose 1.12.0-beta01 硬性要求 compileSdk ≥ 37 且 AGP ≥ 9.1.0，超出本计划范围。实施时 alpha21 的传递依赖（compose 1.12.0-alpha03、navigationevent 1.1.0）仍有同类硬约束，最终落地 **alpha13** + compileSdk 36，AGP/Gradle 不动。
 
 ## Global Constraints
 
@@ -31,9 +31,9 @@
 
 **Interfaces:**
 - Consumes: 无（首个任务）
-- Produces: 依赖中存在 `androidx.compose.material3:material3:1.5.0-alpha21`（提供 `MaterialExpressiveTheme` 与 `MotionScheme`，供 Task 2 使用）；compileSdk = 36、targetSdk = 35。
+- Produces: 依赖中存在 `androidx.compose.material3:material3:1.5.0-alpha13`（提供 `MaterialExpressiveTheme` 与 `MotionScheme`，供 Task 2 使用）；compileSdk = 36、targetSdk = 35。
 
-> 为什么 pin alpha：BOM 2026.05.01 映射的 material3 稳定版是 1.4.0，其中 `MaterialExpressiveTheme` 未公开（仍为 internal）；公开该 API 需要 1.5.0-alpha 系列。选用 alpha21：有真实项目（2026 年 5–6 月）验证其配 BOM 2026.05.01 可构建；更新的 alpha（如 alpha24）传递依赖 compose 1.12.0-beta，硬性要求 compileSdk ≥ 37 且 AGP ≥ 9.1.0，已排除。
+> 为什么 pin alpha：BOM 2026.05.01 映射的 material3 稳定版是 1.4.0，其中 `MaterialExpressiveTheme` 未公开（仍为 internal）；公开该 API 需要 1.5.0-alpha 系列。最终选用 alpha13（2026-01-28）：早于 compose 1.12 传递依赖链；更新的 alpha（alpha21/alpha24）传递依赖 compose 1.12.0-alpha/beta，硬性要求 compileSdk ≥ 37 且 AGP ≥ 9.1.0，已排除。
 
 - [ ] **Step 1: 升级 Kotlin 插件版本**
 
@@ -70,9 +70,9 @@ dependencies {
     implementation(composeBom)
     androidTestImplementation(composeBom)
 
-    // material3 显式 pin 到 1.5.0-alpha21，覆盖 BOM 的 1.4.0，
+    // material3 显式 pin 到 1.5.0-alpha13，覆盖 BOM 的 1.4.0，
     // 以获得公开的 MaterialExpressiveTheme / MotionScheme API
-    implementation("androidx.compose.material3:material3:1.5.0-alpha21")
+    implementation("androidx.compose.material3:material3:1.5.0-alpha13")
     // 其余依赖保持不变（activity-compose 1.9.1 已含 enableEdgeToEdge）
 }
 ```
@@ -115,7 +115,7 @@ Expected: BUILD SUCCESSFUL。
 
 ```bash
 git add android/build.gradle.kts android/app/build.gradle.kts android/gradle.properties
-git commit -m "build(android): bump Kotlin 2.2.21, compileSdk 36, Compose BOM 2026.05.01, pin material3 1.5.0-alpha21"
+git commit -m "build(android): bump Kotlin 2.2.21, compileSdk 36, Compose BOM 2026.05.01, pin material3 1.5.0-alpha13"
 ```
 
 ---
@@ -126,7 +126,7 @@ git commit -m "build(android): bump Kotlin 2.2.21, compileSdk 36, Compose BOM 20
 - Create: `android/app/src/main/java/com/clipsync/app/ui/theme/Theme.kt`
 
 **Interfaces:**
-- Consumes: Task 1 的 material3 1.5.0-alpha21。
+- Consumes: Task 1 的 material3 1.5.0-alpha13。
 - Produces: `@Composable fun ClipSyncTheme(content: @Composable () -> Unit)`，包名 `com.clipsync.app.ui.theme`——Task 3、Task 5 都包它。
 
 - [ ] **Step 1: 写主题文件**

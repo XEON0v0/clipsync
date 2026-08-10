@@ -1,24 +1,55 @@
 package com.clipsync.app
 
-import android.app.Activity
 import android.content.Context
 import android.os.Bundle
 import android.widget.Toast
-import android.widget.TextView
+import androidx.activity.ComponentActivity
+import androidx.activity.compose.setContent
+import androidx.activity.enableEdgeToEdge
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawingPadding
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.dp
+import com.clipsync.app.ui.theme.ClipSyncTheme
 
-class FocusClipboardActivity : Activity() {
-    private lateinit var statusView: TextView
+class FocusClipboardActivity : ComponentActivity() {
+    private var statusText by mutableStateOf("")
     private var clipboardRead = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        enableEdgeToEdge()
         ClipboardSyncService.start(this)
-        statusView = TextView(this).apply {
-            text = getString(R.string.focus_reading)
-            textSize = 18f
-            setPadding(48, 72, 48, 48)
+        statusText = getString(R.string.focus_reading)
+        setContent {
+            ClipSyncTheme {
+                Surface(modifier = Modifier.fillMaxSize()) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .safeDrawingPadding()
+                            .padding(horizontal = 32.dp),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Text(
+                            text = statusText,
+                            style = MaterialTheme.typography.titleMedium,
+                            textAlign = TextAlign.Center,
+                        )
+                    }
+                }
+            }
         }
-        setContentView(statusView)
     }
 
     override fun onWindowFocusChanged(hasFocus: Boolean) {
@@ -38,7 +69,7 @@ class FocusClipboardActivity : Activity() {
     }
 
     private fun send(payload: ClipboardPayload) {
-        statusView.text = getString(R.string.focus_sending)
+        statusText = getString(R.string.focus_sending)
         (application as ClipSyncApp).send(payload) { result ->
             runOnUiThread { finishWith(result) }
         }

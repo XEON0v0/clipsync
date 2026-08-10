@@ -11,6 +11,7 @@ import android.os.PowerManager
 import android.provider.Settings
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.clickable
@@ -22,6 +23,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
@@ -38,6 +40,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Tab
 import androidx.compose.material3.TabRow
@@ -58,6 +61,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.clipsync.app.ui.theme.ClipSyncTheme
 import java.text.DateFormat
 import java.util.Date
 
@@ -75,9 +79,10 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        enableEdgeToEdge()
         setContent {
             val uiState by app.uiState.collectAsState()
-            MaterialTheme {
+            ClipSyncTheme {
                 Surface(modifier = Modifier.fillMaxSize()) {
                     ClipSyncScreen(
                         state = uiState,
@@ -171,7 +176,12 @@ private fun ClipSyncScreen(
     isBatteryExempt: Boolean,
 ) {
     var selectedTab by remember { mutableStateOf(AppTab.PAIRING) }
-    Column(modifier = Modifier.fillMaxSize()) {
+    Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(innerPadding),
+        ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
@@ -225,6 +235,7 @@ private fun ClipSyncScreen(
             AppTab.POWER -> PowerPane(isBatteryExempt, requestBatteryExemption)
         }
     }
+    }
 }
 
 @Composable
@@ -262,6 +273,7 @@ private fun PairingPane(
                 onClick = { scanning = false },
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
+                    .navigationBarsPadding()
                     .padding(24.dp),
             ) {
                 Text("取消扫码")

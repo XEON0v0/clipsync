@@ -84,6 +84,7 @@ class MainActivity : ComponentActivity() {
                         app = app,
                         openNotificationSettings = ::openNotificationSettings,
                         openCameraSettings = ::openAppSettings,
+                        sendCurrentClipboard = ::sendCurrentClipboard,
                         requestBatteryExemption = ::requestBatteryExemption,
                         isBatteryExempt = batteryStateRevision.let { isBatteryExempt() },
                     )
@@ -128,6 +129,10 @@ class MainActivity : ComponentActivity() {
 
     private fun openAppSettings() = startActivity(appDetailsIntent())
 
+    private fun sendCurrentClipboard() {
+        startActivity(Intent(this, FocusClipboardActivity::class.java))
+    }
+
     private fun appDetailsIntent() = Intent(
         Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
         Uri.parse("package:$packageName"),
@@ -161,6 +166,7 @@ private fun ClipSyncScreen(
     app: ClipSyncApp,
     openNotificationSettings: () -> Unit,
     openCameraSettings: () -> Unit,
+    sendCurrentClipboard: () -> Unit,
     requestBatteryExemption: () -> Unit,
     isBatteryExempt: Boolean,
 ) {
@@ -209,7 +215,12 @@ private fun ClipSyncScreen(
             }
         }
         when (selectedTab) {
-            AppTab.PAIRING -> PairingPane(state.pairing, app, openCameraSettings)
+            AppTab.PAIRING -> PairingPane(
+                pairing = state.pairing,
+                app = app,
+                openCameraSettings = openCameraSettings,
+                sendCurrentClipboard = sendCurrentClipboard,
+            )
             AppTab.HISTORY -> HistoryPane(state, app)
             AppTab.POWER -> PowerPane(isBatteryExempt, requestBatteryExemption)
         }
@@ -221,6 +232,7 @@ private fun PairingPane(
     pairing: PairingUiState,
     app: ClipSyncApp,
     openCameraSettings: () -> Unit,
+    sendCurrentClipboard: () -> Unit,
 ) {
     var scanning by remember { mutableStateOf(false) }
     var cameraGranted by remember {
@@ -302,6 +314,9 @@ private fun PairingPane(
             is PairingUiState.Paired -> {
                 Text("已配对", style = MaterialTheme.typography.titleLarge)
                 Text("房间 ${pairing.roomId.take(12)}")
+                Button(onClick = sendCurrentClipboard) {
+                    Text(stringResource(R.string.send_current_clipboard))
+                }
             }
         }
     }

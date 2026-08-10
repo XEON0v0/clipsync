@@ -16,12 +16,12 @@ val releaseSigning = Properties().apply {
 
 android {
     namespace = "com.clipsync.app"
-    compileSdk = 34
+    compileSdk = 36
 
     defaultConfig {
         applicationId = "com.clipsync.app"
         minSdk = 29
-        targetSdk = 34
+        targetSdk = 35
         versionCode = 1
         versionName = "0.1.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
@@ -85,7 +85,7 @@ android {
 }
 
 dependencies {
-    val composeBom = platform("androidx.compose:compose-bom:2024.06.00")
+    val composeBom = platform("androidx.compose:compose-bom:2026.05.01")
     implementation(composeBom)
     androidTestImplementation(composeBom)
 
@@ -94,7 +94,9 @@ dependencies {
     implementation("androidx.camera:camera-lifecycle:1.3.4")
     implementation("androidx.camera:camera-view:1.3.4")
     implementation("androidx.core:core-ktx:1.13.1")
-    implementation("androidx.compose.material3:material3")
+    // material3 显式 pin 到 1.5.0-alpha13，覆盖 BOM 的 1.4.0，
+    // 以获得公开的 MaterialExpressiveTheme / MotionScheme API
+    implementation("androidx.compose.material3:material3:1.5.0-alpha13")
     implementation("androidx.compose.material:material-icons-core")
     implementation("androidx.compose.ui:ui")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")

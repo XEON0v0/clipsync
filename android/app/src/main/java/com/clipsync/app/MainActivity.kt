@@ -2,6 +2,7 @@ package com.clipsync.app
 
 import android.Manifest
 import android.content.ActivityNotFoundException
+import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
@@ -44,6 +45,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Tab
 import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
@@ -60,6 +62,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -448,6 +451,8 @@ private fun HistoryRow(item: CoreHistoryItem, app: ClipSyncApp) {
 
 @Composable
 private fun PowerPane(isBatteryExempt: Boolean, requestBatteryExemption: () -> Unit) {
+    val context = LocalContext.current
+    var saveToGallery by remember { mutableStateOf(AppContract.saveToGalleryEnabled(context)) }
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -458,6 +463,29 @@ private fun PowerPane(isBatteryExempt: Boolean, requestBatteryExemption: () -> U
         Text(if (isBatteryExempt) "电池优化白名单：已允许" else "电池优化白名单：未允许")
         if (!isBatteryExempt) {
             Button(onClick = requestBatteryExemption) { Text("允许后台持续接收") }
+        }
+        HorizontalDivider()
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(Modifier.weight(1f)) {
+                Text("保存同步图片到图库", style = MaterialTheme.typography.titleMedium)
+                Text(
+                    "Mac 同步来的图片自动存入 Pictures/ClipSync",
+                    style = MaterialTheme.typography.bodySmall,
+                )
+            }
+            Switch(
+                checked = saveToGallery,
+                onCheckedChange = { checked ->
+                    saveToGallery = checked
+                    context.getSharedPreferences(AppContract.PREFERENCES, Context.MODE_PRIVATE)
+                        .edit()
+                        .putBoolean(AppContract.KEY_SAVE_TO_GALLERY, checked)
+                        .apply()
+                },
+            )
         }
         HorizontalDivider()
         Text("国产 ROM 自启动", style = MaterialTheme.typography.titleMedium)

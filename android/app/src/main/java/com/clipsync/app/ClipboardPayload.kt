@@ -219,28 +219,37 @@ object GalleryImageStore {
             put(MediaStore.Images.Media.IS_PENDING, 1)
         }
         val uri = resolver.insert(collection, values) ?: return false
-        val written = resolver.openOutputStream(uri)?.use { output ->
-            output.write(bytes)
-            true
-        } ?: false
-        if (!written) {
+        try {
+            val written = resolver.openOutputStream(uri)?.use { output ->
+                output.write(bytes)
+                true
+            } ?: false
+            if (!written) {
+                resolver.delete(uri, null, null)
+                return false
+            }
+            values.clear()
+            values.put(MediaStore.Images.Media.IS_PENDING, 0)
+            resolver.update(uri, values, null, null)
+            return true
+        } catch (error: Exception) {
             resolver.delete(uri, null, null)
-            return false
+            throw error
         }
-        values.clear()
-        values.put(MediaStore.Images.Media.IS_PENDING, 0)
-        resolver.update(uri, values, null, null)
-        return true
     }
 
     private fun exists(resolver: ContentResolver, displayName: String): Boolean {
-        val cursor = resolver.query(
-            MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
-            arrayOf(MediaStore.Images.Media._ID),
-            "${MediaStore.Images.Media.DISPLAY_NAME} = ?",
-            arrayOf(displayName),
-            null,
-        ) ?: return false
+        val cursor = try {
+            resolver.query(
+                MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
+                arrayOf(MediaStore.Images.Media._ID),
+                "${MediaStore.Images.Media.DISPLAY_NAME} = ? AND ${MediaStore.Images.Media.IS_PENDING} = 0",
+                arrayOf(displayName),
+                null,
+            )
+        } catch (error: Exception) {
+            return false
+        } ?: return false
         return cursor.use { it.moveToFirst() }
     }
 }

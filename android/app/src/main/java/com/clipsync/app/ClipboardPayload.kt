@@ -3,9 +3,13 @@ package com.clipsync.app
 import android.content.ClipData
 import android.content.ClipDescription
 import android.content.ClipboardManager
+import android.content.ContentResolver
+import android.content.ContentValues
 import android.content.Context
 import android.graphics.BitmapFactory
 import android.net.Uri
+import android.provider.MediaStore
+import android.util.Log
 import androidx.core.content.FileProvider
 import java.io.ByteArrayOutputStream
 import java.io.File
@@ -109,6 +113,13 @@ object ImagePolicy {
     }
 }
 
+private fun imageExtension(mimeType: String): String = when (mimeType) {
+    "image/jpeg" -> "jpg"
+    "image/webp" -> "webp"
+    "image/gif" -> "gif"
+    else -> "png"
+}
+
 object LiveClipboardWriter {
     fun apply(context: Context, item: FfiClipItem) {
         val clipboard = context.getSystemService(ClipboardManager::class.java)
@@ -131,6 +142,9 @@ object LiveClipboardWriter {
     private fun imageClip(context: Context, id: String, bytes: ByteArray): ClipData {
         val mimeType = ImagePolicy.mimeType(bytes) ?: error("图片格式或尺寸不受支持")
         val file = ReceivedImageStore.save(context, id, bytes, mimeType)
+        if (AppContract.saveToGalleryEnabled(context)) {
+            GalleryImageStore.save(context, id, bytes, mimeType)
+        }
         val uri = FileProvider.getUriForFile(
             context,
             context.packageName + AppContract.FILE_PROVIDER_AUTHORITY_SUFFIX,
@@ -151,12 +165,7 @@ object ReceivedImageStore {
         val safeId = UUID.fromString(id).toString()
         val directory = File(context.filesDir, "received_images").apply { mkdirs() }
         cleanup(directory)
-        val extension = when (mimeType) {
-            "image/jpeg" -> "jpg"
-            "image/webp" -> "webp"
-            "image/gif" -> "gif"
-            else -> "png"
-        }
+        val extension = imageExtension(mimeType)
         val destination = File(directory, "$safeId.$extension")
         val temporary = File(directory, ".$safeId.tmp")
         FileOutputStream(temporary).use { output ->
@@ -182,5 +191,56 @@ object ReceivedImageStore {
                     file.delete()
                 }
             }
+    }
+}
+
+object GalleryImageStore {
+    private const val TAG = "GalleryImageStore"
+    private const val RELATIVE_PATH = "Pictures/ClipSync/"
+
+    fun save(context: Context, id: String, bytes: ByteArray, mimeType: String): Boolean {
+        return try {
+            writeOnce(context, id, bytes, mimeType)
+        } catch (error: Exception) {
+            Log.w(TAG, "同步图片保存到图库失败", error)
+            false
+        }
+    }
+
+    private fun writeOnce(context: Context, id: String, bytes: ByteArray, mimeType: String): Boolean {
+        val displayName = "clipsync_${UUID.fromString(id)}.${imageExtension(mimeType)}"
+        val resolver = context.contentResolver
+        if (exists(resolver, displayName)) return true
+        val collection = MediaStore.Images.Media.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY)
+        val values = ContentValues().apply {
+            put(MediaStore.Images.Media.DISPLAY_NAME, displayName)
+            put(MediaStore.Images.Media.MIME_TYPE, mimeType)
+            put(MediaStore.Images.Media.RELATIVE_PATH, RELATIVE_PATH)
+            put(MediaStore.Images.Media.IS_PENDING, 1)
+        }
+        val uri = resolver.insert(collection, values) ?: return false
+        val written = resolver.openOutputStream(uri)?.use { output ->
+            output.write(bytes)
+            true
+        } ?: false
+        if (!written) {
+            resolver.delete(uri, null, null)
+            return false
+        }
+        values.clear()
+        values.put(MediaStore.Images.Media.IS_PENDING, 0)
+        resolver.update(uri, values, null, null)
+        return true
+    }
+
+    private fun exists(resolver: ContentResolver, displayName: String): Boolean {
+        val cursor = resolver.query(
+            MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
+            arrayOf(MediaStore.Images.Media._ID),
+            "${MediaStore.Images.Media.DISPLAY_NAME} = ?",
+            arrayOf(displayName),
+            null,
+        ) ?: return false
+        return cursor.use { it.moveToFirst() }
     }
 }

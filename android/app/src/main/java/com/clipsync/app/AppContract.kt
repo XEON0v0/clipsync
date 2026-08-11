@@ -28,6 +28,7 @@ object AppContract {
     const val KEY_NOTIFICATION_ASKED = "notification_asked"
     const val KEY_NOTIFICATION_STATE = "notification_state"
     const val KEY_SERVICE_RUNNING = "service_running"
+    const val KEY_SAVE_TO_GALLERY = "save_to_gallery"
     const val KEY_WINDOW_FOCUS_READ = "window_focus_read"
 
     fun notificationState(context: Context): NotificationState {
@@ -36,4 +37,8 @@ object AppContract {
             PackageManager.PERMISSION_GRANTED
         return if (granted) NotificationState.VISIBLE else NotificationState.RESTRICTED
     }
+
+    fun saveToGalleryEnabled(context: Context): Boolean =
+        context.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE)
+            .getBoolean(KEY_SAVE_TO_GALLERY, true)
 }

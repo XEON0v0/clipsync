@@ -4,7 +4,11 @@ import android.content.pm.PackageManager
 import android.content.pm.ServiceInfo
 import android.graphics.Bitmap
 import android.os.Build
+import android.os.SystemClock
+import android.provider.MediaStore
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import androidx.test.uiautomator.By
+import androidx.test.uiautomator.Until
 import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.FileOutputStream
@@ -159,6 +163,30 @@ class PlatformFeasibilityTest {
     }
 
     @Test
+    fun pairedScreenSendsCurrentClipboardToPeer() {
+        PlatformTestSupport.startForegroundService()
+        val expected = "in-app-send-api-${Build.VERSION.SDK_INT}"
+        PlatformTestSupport.setClipboardText(expected)
+        PlatformTestSupport.launchMainActivity()
+
+        val sendButton = PlatformTestSupport.device.wait(
+            Until.findObject(
+                By.text(PlatformTestSupport.context.getString(R.string.send_current_clipboard)),
+            ),
+            5_000,
+        ) ?: throw AssertionError("paired screen has no current-clipboard send action")
+        val result = PlatformTestSupport.awaitStringPreference(AppContract.KEY_LAST_SEND_RESULT) {
+            sendButton.click()
+        }
+
+        assertEquals("sent:42", result)
+        assertEquals(
+            expected,
+            PlatformTestSupport.preferences.getString(PlatformTestSupport.KEY_TEST_SENT_TEXT, null),
+        )
+    }
+
+    @Test
     fun elevenMiBImageUsesOversizeToastPathWithoutCallingCore() {
         PlatformTestSupport.startForegroundService()
         val directory = File(PlatformTestSupport.context.filesDir, "received_images").apply { mkdirs() }
@@ -195,8 +223,102 @@ class PlatformFeasibilityTest {
         assertEquals(bytes.size, PlatformTestSupport.preferences.getInt(PlatformTestSupport.KEY_TEST_SENT_IMAGE_SIZE, -1))
     }
 
-    private fun clipItem(content: FfiClipContent) = FfiClipItem(
-        id = UUID.randomUUID().toString(),
+    @Test
+    fun liveImageCallbackSavesImageToGalleryAlbum() {
+        PlatformTestSupport.startForegroundService()
+        val bytes = samplePngBytes()
+        val id = UUID.randomUUID().toString()
+        try {
+            PlatformTestSupport.app.onClip(clipItem(FfiClipContent.Image(bytes), id))
+            assertTrue("gallery entry not found", awaitGalleryCount(id, 1))
+            assertTrue(
+                "unexpected album: ${galleryRelativePath(id)}",
+                galleryRelativePath(id)?.contains("Pictures/ClipSync") == true,
+            )
+        } finally {
+            deleteGalleryEntries(id)
+        }
+    }
+
+    @Test
+    fun sameImageIdSavesToGalleryOnlyOnce() {
+        PlatformTestSupport.startForegroundService()
+        val bytes = samplePngBytes()
+        val id = UUID.randomUUID().toString()
+        try {
+            val item = clipItem(FfiClipContent.Image(bytes), id)
+            PlatformTestSupport.app.onClip(item)
+            PlatformTestSupport.app.onClip(item)
+            assertTrue("expected exactly one gallery entry", awaitGalleryCount(id, 1))
+        } finally {
+            deleteGalleryEntries(id)
+        }
+    }
+
+    @Test
+    fun gallerySaveSkippedWhenSwitchDisabled() {
+        PlatformTestSupport.preferences.edit()
+            .putBoolean(AppContract.KEY_SAVE_TO_GALLERY, false).commit()
+        PlatformTestSupport.startForegroundService()
+        val bytes = samplePngBytes()
+        val id = UUID.randomUUID().toString()
+        try {
+            PlatformTestSupport.app.onClip(clipItem(FfiClipContent.Image(bytes), id))
+            // onClip 同步执行，返回后保存必然已完成或未发生，可直接断言
+            assertEquals(0, galleryEntryCount(id))
+        } finally {
+            deleteGalleryEntries(id)
+        }
+    }
+
+    private fun samplePngBytes(): ByteArray {
+        val bitmap = Bitmap.createBitmap(2, 2, Bitmap.Config.ARGB_8888)
+        val bytes = ByteArrayOutputStream().use { output ->
+            bitmap.compress(Bitmap.CompressFormat.PNG, 100, output)
+            output.toByteArray()
+        }
+        bitmap.recycle()
+        return bytes
+    }
+
+    private fun queryGallery(id: String) = PlatformTestSupport.context.contentResolver.query(
+        MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
+        arrayOf(MediaStore.Images.Media._ID, MediaStore.Images.Media.RELATIVE_PATH),
+        "${MediaStore.Images.Media.DISPLAY_NAME} LIKE ?",
+        arrayOf("clipsync_$id.%"),
+        null,
+    )
+
+    private fun galleryEntryCount(id: String): Int = queryGallery(id)?.use { it.count } ?: 0
+
+    private fun galleryRelativePath(id: String): String? = queryGallery(id)?.use { cursor ->
+        if (!cursor.moveToFirst()) return@use null
+        val column = cursor.getColumnIndex(MediaStore.Images.Media.RELATIVE_PATH)
+        if (column < 0) null else cursor.getString(column)
+    }
+
+    private fun awaitGalleryCount(id: String, expected: Int): Boolean {
+        val deadline = SystemClock.uptimeMillis() + 15_000
+        while (SystemClock.uptimeMillis() < deadline) {
+            if (galleryEntryCount(id) == expected) return true
+            SystemClock.sleep(200)
+        }
+        return false
+    }
+
+    private fun deleteGalleryEntries(id: String) {
+        PlatformTestSupport.context.contentResolver.delete(
+            MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
+            "${MediaStore.Images.Media.DISPLAY_NAME} LIKE ?",
+            arrayOf("clipsync_$id.%"),
+        )
+    }
+
+    private fun clipItem(
+        content: FfiClipContent,
+        id: String = UUID.randomUUID().toString(),
+    ) = FfiClipItem(
+        id = id,
         tsMs = System.currentTimeMillis(),
         seq = 1UL,
         content = content,

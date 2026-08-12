@@ -27,22 +27,24 @@ pub enum Page {
 }
 
 pub struct DesktopApp {
-    bridge: CoreBridge,
+    pub(crate) bridge: CoreBridge,
     core_rx: Receiver<CoreEvent>,
     tray_rx: Receiver<TrayCommand>,
     clip_rx: Receiver<ClipboardPayload>,
-    // 以下字段由 Task 8-10 页面实现消费，当前仅持有
+    // 以下字段由 Task 9-10 页面实现消费，当前仅持有
     #[allow(dead_code)]
-    monitor: MonitorHandle,
+    pub(crate) monitor: MonitorHandle,
     _tray: Tray,
+    pub(crate) settings: Settings,
     #[allow(dead_code)]
-    settings: Settings,
-    #[allow(dead_code)]
-    settings_path: PathBuf,
+    pub(crate) settings_path: PathBuf,
     page: Page,
     status: Option<CoreStatus>,
-    history: Vec<FfiHistoryItem>,
+    pub(crate) history: Vec<FfiHistoryItem>,
     toast: Option<(String, Instant)>,
+    pub(crate) qr_cache: Option<(String, egui::TextureHandle)>,
+    pub(crate) confirm_reset: bool,
+    pub(crate) pending_repair: bool,
 }
 
 /// 状态文字 + 圆点颜色（CoreStatus 8 态 → UI 文案）。
@@ -103,6 +105,9 @@ impl DesktopApp {
             status: None,
             history: vec![],
             toast: None,
+            qr_cache: None,
+            confirm_reset: false,
+            pending_repair: false,
         })
     }
 
@@ -146,11 +151,19 @@ impl DesktopApp {
             CoreEvent::Applied(Err(e)) | CoreEvent::Cleared(Err(e)) | CoreEvent::ResetDone(Err(e)) => {
                 self.toast(format!("操作失败：{e}"))
             }
+            // 换绑联动：解绑成功后立即发起新配对
+            CoreEvent::ResetDone(Ok(())) => {
+                if self.pending_repair {
+                    self.pending_repair = false;
+                    self.bridge
+                        .send(BridgeCommand::PairBegin(self.settings.relay_url.clone()));
+                }
+            }
             _ => {}
         }
     }
 
-    fn send_current_clipboard(&mut self) {
+    pub(crate) fn send_current_clipboard(&mut self) {
         if let Some(mut io) = ArboardIo::new()
             && let Some(payload) = io.read()
         {
@@ -170,7 +183,7 @@ impl DesktopApp {
         }
     }
 
-    fn toast(&mut self, message: String) {
+    pub(crate) fn toast(&mut self, message: String) {
         self.toast = Some((message, Instant::now()));
     }
 
@@ -226,10 +239,13 @@ impl eframe::App for DesktopApp {
         egui::CentralPanel::default().show(ctx, |ui| {
             ui.add_space(12.0);
             match self.page {
-                // 页面实现在 Task 8-10 填充
-                Page::Pairing => ui.label("（配对页 —— Task 8）"),
-                Page::History => ui.label("（历史页 —— Task 9）"),
-                Page::Settings => ui.label("（设置页 —— Task 10）"),
+                Page::Pairing => crate::ui::pairing::show(self, ui),
+                Page::History => {
+                    ui.label("（历史页 —— Task 9）");
+                }
+                Page::Settings => {
+                    ui.label("（设置页 —— Task 10）");
+                }
             }
         });
 

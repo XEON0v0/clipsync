@@ -1,3 +1,5 @@
+pub mod pairing;
+
 use eframe::egui;
 use egui::{Color32, CornerRadius, FontFamily, FontId, Stroke, TextStyle};
 

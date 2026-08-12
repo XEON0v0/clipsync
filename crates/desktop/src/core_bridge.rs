@@ -181,8 +181,12 @@ fn run_executor(handle: &CoreHandle, rx: Receiver<BridgeCommand>, event_tx: &Sen
                 }
             },
             BridgeCommand::SendText(text) => {
-                if let Err(e) = handle.send_text(text) {
-                    log::warn!("send_text failed: {e}");
+                // 回显抑制在 executor 线程执行：is_echo 是阻塞 CoreHandle 调用，
+                // UI 线程一律不碰（core 回显环仅记录文本哈希，图片无需抑制）。
+                if !handle.is_echo(clipboard_core::session::text_hash(&text)) {
+                    if let Err(e) = handle.send_text(text) {
+                        log::warn!("send_text failed: {e}");
+                    }
                 }
             }
             BridgeCommand::SendImage(bytes) => {

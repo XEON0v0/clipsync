@@ -159,11 +159,10 @@ impl DesktopApp {
     }
 
     fn send_payload(&self, payload: ClipboardPayload) {
+        // 回显抑制由 executor 线程完成（UI 线程不调用阻塞 CoreHandle 方法）
         match payload {
             ClipboardPayload::Text(text) => {
-                if !self.bridge.is_echo(clipboard_core::session::text_hash(&text)) {
-                    self.bridge.send(BridgeCommand::SendText(text));
-                }
+                self.bridge.send(BridgeCommand::SendText(text));
             }
             ClipboardPayload::ImagePng(bytes) => {
                 self.bridge.send(BridgeCommand::SendImage(bytes));

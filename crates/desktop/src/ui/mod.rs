@@ -1,3 +1,4 @@
+pub mod history;
 pub mod pairing;
 
 use eframe::egui;

@@ -26,16 +26,22 @@ pub enum Page {
     Settings,
 }
 
+/// 缩略图状态：Loading 已发出取图请求 / Ready 纹理已建 / Failed 取图或解码失败。
+pub(crate) enum ThumbState {
+    Loading,
+    Ready(egui::TextureHandle),
+    Failed,
+}
+
 pub struct DesktopApp {
     pub(crate) bridge: CoreBridge,
     core_rx: Receiver<CoreEvent>,
     tray_rx: Receiver<TrayCommand>,
     clip_rx: Receiver<ClipboardPayload>,
-    // 以下字段由 Task 9-10 页面实现消费，当前仅持有
-    #[allow(dead_code)]
     pub(crate) monitor: MonitorHandle,
     _tray: Tray,
     pub(crate) settings: Settings,
+    // 以下字段由 Task 10 设置页消费，当前仅持有
     #[allow(dead_code)]
     pub(crate) settings_path: PathBuf,
     page: Page,
@@ -46,6 +52,10 @@ pub struct DesktopApp {
     pub(crate) confirm_reset: bool,
     pub(crate) confirm_repair: bool,
     pub(crate) pending_repair: bool,
+    pub(crate) thumbs: std::collections::HashMap<String, ThumbState>,
+    pub(crate) pending_thumbs: std::collections::HashMap<String, Vec<u8>>,
+    pub(crate) pending_apply: Option<String>,
+    pub(crate) confirm_clear: bool,
 }
 
 /// 状态文字 + 圆点颜色（CoreStatus 8 态 → UI 文案）。
@@ -110,6 +120,10 @@ impl DesktopApp {
             confirm_reset: false,
             confirm_repair: false,
             pending_repair: false,
+            thumbs: std::collections::HashMap::new(),
+            pending_thumbs: std::collections::HashMap::new(),
+            pending_apply: None,
+            confirm_clear: false,
         })
     }
 
@@ -147,6 +161,29 @@ impl DesktopApp {
             }
             CoreEvent::History(Ok(items)) => self.history = items,
             CoreEvent::History(Err(e)) => self.toast(format!("历史刷新失败：{e}")),
+            CoreEvent::HistoryImage { id, result } => match result {
+                Ok(bytes) => {
+                    // 若是「应用」触发的取图，先写剪贴板（ownership），再走缩略图缓存
+                    if self.pending_apply.as_deref() == Some(id.as_str()) {
+                        self.monitor
+                            .apply_remote(&ClipboardPayload::ImagePng(bytes.clone()), false);
+                        self.pending_apply = None;
+                    }
+                    self.pending_thumbs.insert(id, bytes); // 纹理在渲染期懒建
+                    self.bridge.send(BridgeCommand::HistoryRefresh); // Deferred→Remote 可能已变
+                }
+                Err(_) => {
+                    self.thumbs.insert(id, ThumbState::Failed);
+                }
+            },
+            CoreEvent::Applied(Ok(())) => {
+                self.toast("已应用到剪贴板".to_owned());
+                self.bridge.send(BridgeCommand::HistoryRefresh);
+            }
+            CoreEvent::Cleared(Ok(())) => {
+                self.history.clear();
+                self.thumbs.clear();
+            }
             CoreEvent::QrReady(Err(e)) => self.toast(format!("配对失败：{e}")),
             CoreEvent::PairConfirmed(Err(e)) => self.toast(format!("确认失败：{e}")),
             CoreEvent::SessionStarted(Err(e)) => self.toast(format!("连接失败：{e}")),
@@ -247,9 +284,7 @@ impl eframe::App for DesktopApp {
             ui.add_space(12.0);
             match self.page {
                 Page::Pairing => crate::ui::pairing::show(self, ui),
-                Page::History => {
-                    ui.label("（历史页 —— Task 9）");
-                }
+                Page::History => crate::ui::history::show(self, ui),
                 Page::Settings => {
                     ui.label("（设置页 —— Task 10）");
                 }

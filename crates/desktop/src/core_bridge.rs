@@ -11,7 +11,7 @@ use clipboard_core::ffi::{
     FfiHistoryItem, MailboxDisposition, PairingSnapshot,
 };
 
-use crate::clipboard_monitor::{ClipboardPayload, MonitorHandle};
+use crate::clipboard_monitor::{ClipboardPayload, MonitorHandle, MonitorState};
 
 #[derive(Debug)]
 pub enum BridgeCommand {
@@ -93,6 +93,7 @@ impl CoreCallbacks for BridgeCallbacks {
 pub struct CoreBridge {
     tx: Mutex<Option<Sender<BridgeCommand>>>,
     handle: Arc<CoreHandle>,
+    monitor_state: Arc<Mutex<MonitorState>>,
     join: Mutex<Option<JoinHandle<()>>>,
 }
 
@@ -102,6 +103,7 @@ impl CoreBridge {
         monitor: MonitorHandle,
         event_tx: Sender<CoreEvent>,
     ) -> Result<Self, CoreError> {
+        let monitor_state = monitor.state();
         let callbacks = BridgeCallbacks {
             monitor,
             event_tx: event_tx.clone(),
@@ -121,6 +123,7 @@ impl CoreBridge {
         Ok(Self {
             tx: Mutex::new(Some(tx)),
             handle,
+            monitor_state,
             join: Mutex::new(Some(executor)),
         })
     }
@@ -134,6 +137,17 @@ impl CoreBridge {
     /// 非阻塞快照，UI 线程每帧调用安全。
     pub fn pair_poll(&self) -> PairingSnapshot {
         self.handle.pair_poll()
+    }
+
+    /// 桌面产品形态只做 offerer；claim 仅供 loopback 集成测试驱动对端。
+    #[doc(hidden)]
+    pub fn pair_claim_for_test(&self, qr_payload: &str) -> Result<String, CoreError> {
+        self.handle.pair_claim(qr_payload.to_owned())
+    }
+
+    #[doc(hidden)]
+    pub fn bridge_monitor_state(&self) -> Arc<Mutex<MonitorState>> {
+        self.monitor_state.clone()
     }
 
     pub fn is_echo(&self, hash: String) -> bool {

@@ -159,7 +159,13 @@ impl DesktopApp {
             CoreEvent::LiveClip(_) => {
                 self.bridge.send(BridgeCommand::HistoryRefresh);
             }
-            CoreEvent::History(Ok(items)) => self.history = items,
+            CoreEvent::History(Ok(items)) => {
+                // 淘汰滚出 50 条窗口的缩略图缓存：GPU 纹理随历史翻滚释放，
+                // 在途取图字节同理（否则滚出窗口的 id 永久驻留）
+                ui::history::retain_current(&mut self.thumbs, &items);
+                ui::history::retain_current(&mut self.pending_thumbs, &items);
+                self.history = items;
+            }
             CoreEvent::History(Err(e)) => self.toast(format!("历史刷新失败：{e}")),
             CoreEvent::HistoryImage { id, result } => match result {
                 Ok(bytes) => {
@@ -183,6 +189,7 @@ impl DesktopApp {
             CoreEvent::Cleared(Ok(())) => {
                 self.history.clear();
                 self.thumbs.clear();
+                self.pending_thumbs.clear();
             }
             CoreEvent::QrReady(Err(e)) => self.toast(format!("配对失败：{e}")),
             CoreEvent::PairConfirmed(Err(e)) => self.toast(format!("确认失败：{e}")),

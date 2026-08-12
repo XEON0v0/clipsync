@@ -90,20 +90,43 @@ fn show_thumbnail(app: &mut DesktopApp, ui: &mut egui::Ui, id: &str) {
             ui.label("[图片]");
         }
     }
-    // pending bytes → 建纹理
+    // pending bytes → 建纹理（解码后先降采样，避免原图全分辨率上传 GPU）
     if let Some(bytes) = app.pending_thumbs.remove(id) {
-        match image::load_from_memory(&bytes) {
-            Ok(img) => {
-                let rgba = img.to_rgba8();
-                let (w, h) = (rgba.width() as usize, rgba.height() as usize);
-                let color = ColorImage::from_rgba_unmultiplied([w, h], &rgba.into_raw());
+        match decode_thumb(&bytes) {
+            Some(color) => {
                 let tex = ui.ctx().load_texture(
                     format!("thumb-{id}"), color, egui::TextureOptions::LINEAR);
                 app.thumbs.insert(id.to_owned(), ThumbState::Ready(tex));
             }
-            Err(_) => { app.thumbs.insert(id.to_owned(), ThumbState::Failed); }
+            None => { app.thumbs.insert(id.to_owned(), ThumbState::Failed); }
         }
     }
+}
+
+/// 缩略图最长边：解码后先降到该尺寸再上传 GPU（保持宽高比，只缩不放），
+/// 避免 4000×3000 原图 ~48MB 全分辨率纹理随历史翻滚无限累积。
+const THUMB_MAX: u32 = 240;
+
+/// PNG 字节 → 缩略图 ColorImage。
+fn decode_thumb(bytes: &[u8]) -> Option<ColorImage> {
+    let img = image::load_from_memory(bytes).ok()?;
+    // image 的 thumbnail 对小图会放大，故只在超过上限时降采样（只缩不放）
+    let img = if img.width().max(img.height()) > THUMB_MAX {
+        img.thumbnail(THUMB_MAX, THUMB_MAX)
+    } else {
+        img
+    };
+    let rgba = img.to_rgba8();
+    let (w, h) = (rgba.width() as usize, rgba.height() as usize);
+    Some(ColorImage::from_rgba_unmultiplied([w, h], &rgba.into_raw()))
+}
+
+/// 历史整体替换后淘汰滚出 50 条窗口的缓存项（只保留仍在 items 中的 id）。
+pub(crate) fn retain_current<V>(
+    map: &mut std::collections::HashMap<String, V>,
+    items: &[FfiHistoryItem],
+) {
+    map.retain(|id, _| items.iter().any(|item| &item.id == id));
 }
 
 fn apply_item(app: &mut DesktopApp, item: &FfiHistoryItem) {
@@ -175,5 +198,44 @@ mod tests {
         assert_eq!(source_label(FfiHistorySource::Local), "本机");
         assert_eq!(source_label(FfiHistorySource::Remote), "对方");
         assert_eq!(source_label(FfiHistorySource::RemoteDeferred), "离线补投");
+    }
+
+    fn png_of(w: u32, h: u32) -> Vec<u8> {
+        let rgba = vec![128u8; (w * h * 4) as usize];
+        crate::clipboard_monitor::rgba_to_png(w, h, &rgba).unwrap()
+    }
+
+    fn text_item(id: &str) -> FfiHistoryItem {
+        FfiHistoryItem {
+            id: id.to_owned(),
+            ts_ms: 0,
+            kind: FfiHistoryKind::Text { content: String::new() },
+            source: FfiHistorySource::Local,
+        }
+    }
+
+    #[test]
+    fn decode_thumb_downscales_long_edge() {
+        let thumb = decode_thumb(&png_of(960, 480)).unwrap();
+        assert_eq!(thumb.size, [THUMB_MAX as usize, 120]);
+    }
+
+    #[test]
+    fn decode_thumb_never_upscales() {
+        let thumb = decode_thumb(&png_of(100, 50)).unwrap();
+        assert_eq!(thumb.size, [100, 50]);
+    }
+
+    #[test]
+    fn decode_thumb_rejects_garbage() {
+        assert!(decode_thumb(b"not a png").is_none());
+    }
+
+    #[test]
+    fn retain_current_drops_evicted_ids() {
+        let mut map = std::collections::HashMap::from([("a".to_owned(), 1), ("b".to_owned(), 2)]);
+        retain_current(&mut map, &[text_item("a")]);
+        assert_eq!(map.len(), 1);
+        assert!(map.contains_key("a"));
     }
 }

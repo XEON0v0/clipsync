@@ -1,3 +1,4 @@
+mod clipboard_monitor;
 mod settings;
 
 use eframe::egui;

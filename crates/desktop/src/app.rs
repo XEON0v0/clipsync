@@ -44,6 +44,7 @@ pub struct DesktopApp {
     toast: Option<(String, Instant)>,
     pub(crate) qr_cache: Option<(String, egui::TextureHandle)>,
     pub(crate) confirm_reset: bool,
+    pub(crate) confirm_repair: bool,
     pub(crate) pending_repair: bool,
 }
 
@@ -107,6 +108,7 @@ impl DesktopApp {
             toast: None,
             qr_cache: None,
             confirm_reset: false,
+            confirm_repair: false,
             pending_repair: false,
         })
     }
@@ -148,7 +150,12 @@ impl DesktopApp {
             CoreEvent::QrReady(Err(e)) => self.toast(format!("配对失败：{e}")),
             CoreEvent::PairConfirmed(Err(e)) => self.toast(format!("确认失败：{e}")),
             CoreEvent::SessionStarted(Err(e)) => self.toast(format!("连接失败：{e}")),
-            CoreEvent::Applied(Err(e)) | CoreEvent::Cleared(Err(e)) | CoreEvent::ResetDone(Err(e)) => {
+            CoreEvent::Applied(Err(e)) | CoreEvent::Cleared(Err(e)) => {
+                self.toast(format!("操作失败：{e}"))
+            }
+            // 换绑失败也要解除联动：否则残留 true 会被后续无关的 ResetDone(Ok) 误触发
+            CoreEvent::ResetDone(Err(e)) => {
+                self.pending_repair = false;
                 self.toast(format!("操作失败：{e}"))
             }
             // 换绑联动：解绑成功后立即发起新配对

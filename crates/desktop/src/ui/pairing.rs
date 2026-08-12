@@ -1,6 +1,7 @@
 //! 配对页：桌面 = offerer（显示 QR，手机扫码），SAS 双向核对。
 
 use clipboard_core::ffi::PairingSnapshot;
+use clipboard_core::pairing::QrPayload;
 use eframe::egui;
 use egui::{ColorImage, RichText};
 
@@ -47,6 +48,19 @@ fn show_offering(app: &mut DesktopApp, ui: &mut egui::Ui, qr_json: &str) {
     if let Some(texture) = qr_texture(app, ui, qr_json) {
         let size = egui::vec2(280.0, 280.0);
         ui.image(egui::load::SizedTexture::new(texture.id(), size));
+    }
+    ui.add_space(8.0);
+    // 配对码文本与 QR 同源：core QrPayload 的 code 字段（6 位大写字母数字）
+    if let Ok(payload) = QrPayload::parse(qr_json) {
+        ui.add(
+            egui::Label::new(
+                RichText::new(format!("配对码：{}", payload.code))
+                    .size(20.0)
+                    .family(egui::FontFamily::Monospace)
+                    .strong(),
+            )
+            .selectable(true),
+        );
     }
     ui.add_space(8.0);
     ui.horizontal(|ui| {
@@ -108,10 +122,20 @@ fn show_paired(app: &mut DesktopApp, ui: &mut egui::Ui, room_id: &str) {
                 app.confirm_reset = true;
             }
         }
-        // 换绑 = 解绑 + 立即发起新配对（ResetDone 事件里联动 PairBegin）
-        if ui.button("换绑（重新配对）").clicked() {
-            app.pending_repair = true;
-            app.bridge.send(BridgeCommand::ResetPairing);
+        // 换绑 = 解绑 + 立即发起新配对（ResetDone 事件里联动 PairBegin），同解绑需二次确认
+        let repair = if app.confirm_repair {
+            "再次点击确认换绑"
+        } else {
+            "换绑（重新配对）"
+        };
+        if ui.button(repair).clicked() {
+            if app.confirm_repair {
+                app.confirm_repair = false;
+                app.pending_repair = true;
+                app.bridge.send(BridgeCommand::ResetPairing);
+            } else {
+                app.confirm_repair = true;
+            }
         }
     });
 }

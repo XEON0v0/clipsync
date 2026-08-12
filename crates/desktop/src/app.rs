@@ -41,8 +41,6 @@ pub struct DesktopApp {
     pub(crate) monitor: MonitorHandle,
     _tray: Tray,
     pub(crate) settings: Settings,
-    // 以下字段由 Task 10 设置页消费，当前仅持有
-    #[allow(dead_code)]
     pub(crate) settings_path: PathBuf,
     page: Page,
     status: Option<CoreStatus>,
@@ -292,9 +290,7 @@ impl eframe::App for DesktopApp {
             match self.page {
                 Page::Pairing => crate::ui::pairing::show(self, ui),
                 Page::History => crate::ui::history::show(self, ui),
-                Page::Settings => {
-                    ui.label("（设置页 —— Task 10）");
-                }
+                Page::Settings => crate::ui::settings::show(self, ui),
             }
         });
 

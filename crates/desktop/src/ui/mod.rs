@@ -1,5 +1,6 @@
 pub mod history;
 pub mod pairing;
+pub mod settings;
 
 use eframe::egui;
 use egui::{Color32, CornerRadius, FontFamily, FontId, Stroke, TextStyle};

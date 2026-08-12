@@ -1,3 +1,5 @@
+mod settings;
+
 use eframe::egui;
 
 fn main() -> eframe::Result<()> {

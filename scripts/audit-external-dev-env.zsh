@@ -17,6 +17,42 @@ fail() {
     | plutil -extract FilesystemType raw -o - -)" == apfs ]] \
     || fail "development volume is not APFS"
 
+typeset java_properties
+java_properties="$(java -XshowSettings:properties -version 2>&1)" \
+    || fail "unable to inspect JVM system properties"
+
+java_property_value() {
+    typeset property_name="$1"
+    print -r -- "$java_properties" \
+        | sed -n "s/^[[:space:]]*${property_name}[[:space:]]*=[[:space:]]*//p" \
+        | head -1
+}
+
+typeset java_tmpdir
+java_tmpdir="$(java_property_value 'java\.io\.tmpdir')"
+[[ -n "$java_tmpdir" ]] || fail "JVM did not report java.io.tmpdir"
+[[ "$java_tmpdir" == "$EXTERNAL_DEV_VOLUME"/* ]] \
+    || fail "JVM java.io.tmpdir escapes external volume: $java_tmpdir"
+
+typeset kotlin_daemon_options kotlin_run_files_path
+kotlin_daemon_options="$(java_property_value 'kotlin\.daemon\.options')"
+[[ "$kotlin_daemon_options" == *runFilesPath=* ]] \
+    || fail "JVM kotlin.daemon.options does not configure runFilesPath"
+kotlin_run_files_path="${kotlin_daemon_options#*runFilesPath=}"
+kotlin_run_files_path="${kotlin_run_files_path%%,*}"
+[[ "$kotlin_run_files_path" == "$EXTERNAL_DEV_VOLUME"/* ]] \
+    || fail "Kotlin daemon runFilesPath escapes external volume: $kotlin_run_files_path"
+
+[[ -n "${ANDROID_TMP:-}" ]] || fail "ANDROID_TMP is not configured"
+[[ "$ANDROID_TMP" == "$EXTERNAL_DEV_VOLUME"/* ]] \
+    || fail "ANDROID_TMP escapes external volume: $ANDROID_TMP"
+
+typeset required_temp_path
+for required_temp_path in "$java_tmpdir" "$kotlin_run_files_path" "$ANDROID_TMP"; do
+    [[ -d "$required_temp_path" && -w "$required_temp_path" ]] \
+        || fail "external temporary directory is unavailable: $required_temp_path"
+done
+
 typeset -a required_external_paths=(
     "$ANDROID_HOME"
     "$ANDROID_AVD_HOME"
@@ -37,6 +73,7 @@ typeset -a required_external_paths=(
     "$UV_CACHE_DIR"
     "$PLAYWRIGHT_BROWSERS_PATH"
     "$TMPDIR"
+    "$ANDROID_TMP"
     "$CLIPSYNC_PROJECT_BUILD_ROOT"
     "$CLIPSYNC_RELEASE_OUTPUT_ROOT"
 )

@@ -2,8 +2,10 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+source "$ROOT_DIR/scripts/require-external-dev.sh"
+clipsync_require_external_dev "$ROOT_DIR"
 ANDROID_DIR="$ROOT_DIR/android"
-ARTIFACT_DIR="$ROOT_DIR/.omo/evidence/task-14-android"
+ARTIFACT_DIR="$CLIPSYNC_TEST_OUTPUT_ROOT/task-14-android"
 export ANDROID_HOME="${ANDROID_HOME:-$HOME/Library/Android/sdk}"
 export JAVA_HOME="${JAVA_HOME:-/Applications/IntelliJ IDEA.app/Contents/jbr/Contents/Home}"
 export JAVA_TOOL_OPTIONS="-Dhttp.proxyHost= -Dhttp.proxyPort=80 -Dhttps.proxyHost= -Dhttps.proxyPort=443"
@@ -111,6 +113,7 @@ capture_state() {
 
 printf '== Android T14 build gates ==\n'
 "$ANDROID_DIR/gradlew" --no-daemon -p "$ANDROID_DIR" \
+    --project-cache-dir "$CLIPSYNC_PROJECT_BUILD_ROOT/gradle-project-cache" \
     lintDebug testDebugUnitTest assembleDebug assembleDebugAndroidTest --console=plain
 
 printf '== API 29 production flow ==\n'

@@ -2,11 +2,13 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+source "$ROOT_DIR/scripts/require-external-dev.sh"
+clipsync_require_external_dev "$ROOT_DIR"
 BASE_COMPOSE="$ROOT_DIR/deploy/docker-compose.yml"
 LOCAL_COMPOSE="$ROOT_DIR/deploy/docker-compose.local.yml"
 RUNBOOK="$ROOT_DIR/deploy/RUNBOOK.md"
-MACOS_APP="$ROOT_DIR/dist/ClipboardSync.app"
-ANDROID_APK="$ROOT_DIR/dist/clipboard-sync.apk"
+MACOS_APP="$CLIPSYNC_RELEASE_OUTPUT_ROOT/ClipboardSync.app"
+ANDROID_APK="$CLIPSYNC_RELEASE_OUTPUT_ROOT/clipboard-sync.apk"
 LOCAL_URL="wss://localhost:8443/ws"
 TMP_ROOT="$(mktemp -d "${TMPDIR:-/tmp}/clipsync-live-smoke.XXXXXX")"
 ENV_FILE="$TMP_ROOT/compose.env"

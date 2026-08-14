@@ -2,8 +2,10 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+source "$ROOT_DIR/scripts/require-external-dev.sh"
+clipsync_require_external_dev "$ROOT_DIR"
 MACOS_DIR="$ROOT_DIR/macos"
-APP_BUNDLE="$ROOT_DIR/dist/ClipboardSync.app"
+APP_BUNDLE="$CLIPSYNC_RELEASE_OUTPUT_ROOT/ClipboardSync.app"
 APP_BINARY="$APP_BUNDLE/Contents/MacOS/ClipSyncMacOS"
 OPEN_PID=""
 APP_PID=""
@@ -18,8 +20,11 @@ cleanup() {
 }
 trap cleanup EXIT INT TERM
 
-swift build --package-path "$MACOS_DIR" -c release -Xswiftc -warnings-as-errors
-BIN_DIR="$(swift build --package-path "$MACOS_DIR" -c release --show-bin-path)"
+SWIFT_BUILD=(swift build --package-path "$MACOS_DIR" \
+    --scratch-path "$CLIPSYNC_SWIFTPM_SCRATCH" \
+    --cache-path "$CLIPSYNC_SWIFTPM_CACHE")
+"${SWIFT_BUILD[@]}" -c release -Xswiftc -warnings-as-errors
+BIN_DIR="$("${SWIFT_BUILD[@]}" -c release --show-bin-path)"
 
 rm -rf "$APP_BUNDLE"
 mkdir -p "$APP_BUNDLE/Contents/MacOS" "$APP_BUNDLE/Contents/Resources"

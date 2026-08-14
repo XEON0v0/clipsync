@@ -1,6 +1,7 @@
 .DS_Store
 .idea/
 .omo/
+.omo
 .swiftpm/
 .kotlin/
 *.iml
@@ -9,8 +10,11 @@
 target/
 build/
 **/build/
+scripts/fixtures/uniffi/kotlin/build
 .gradle/
 **/.gradle/
+android/.gradle
+scripts/fixtures/uniffi/kotlin/.gradle
 .build/
 /macos/Frameworks
 DerivedData/

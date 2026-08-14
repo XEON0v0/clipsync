@@ -3,7 +3,10 @@
 # assert exactly 29 tests pass on every pass. Locked Cargo only.
 set -euo pipefail
 
-cd "$(dirname "$0")/.."
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+source "$ROOT_DIR/scripts/require-external-dev.sh"
+clipsync_require_external_dev "$ROOT_DIR"
+cd "$ROOT_DIR"
 
 for pass in 1 2 3; do
     echo "=== e2e pass ${pass}/3: cargo test --locked -p clipboard-server --test e2e ==="

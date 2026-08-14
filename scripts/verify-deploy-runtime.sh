@@ -2,6 +2,8 @@
 set -euo pipefail
 
 repo_root="$(cd "$(dirname "$0")/.." && pwd)"
+source "$repo_root/scripts/require-external-dev.sh"
+clipsync_require_external_dev "$repo_root"
 deploy_dir="$repo_root/deploy"
 base="$deploy_dir/docker-compose.yml"
 local_override="$deploy_dir/docker-compose.local.yml"

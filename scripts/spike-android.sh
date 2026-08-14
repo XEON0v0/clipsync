@@ -2,6 +2,8 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+source "$ROOT_DIR/scripts/require-external-dev.sh"
+clipsync_require_external_dev "$ROOT_DIR"
 ANDROID_DIR="$ROOT_DIR/android"
 export PATH="$HOME/.cargo/bin:$PATH"
 export ANDROID_HOME="${ANDROID_HOME:-$HOME/Library/Android/sdk}"
@@ -138,10 +140,13 @@ run_focus_failure_injection() {
         printf 'FAIL: failure injection did not move the read to onResume\n' >&2
         return 1
     fi
-    env -u CLIPSYNC_ANDROID_BUILD_ROOT "$SCRATCH_DIR/android/gradlew" --no-daemon "${GRADLE_PROXY_ARGS[@]}" \
+    local injected_build_root="$SCRATCH_DIR/android-build"
+    CLIPSYNC_ANDROID_BUILD_ROOT="$injected_build_root" \
+        "$SCRATCH_DIR/android/gradlew" --no-daemon "${GRADLE_PROXY_ARGS[@]}" \
+        --project-cache-dir "$SCRATCH_DIR/gradle-project-cache" \
         -p "$SCRATCH_DIR/android" :app:assembleDebug :app:assembleDebugAndroidTest
-    "$ADB" -s "$serial" install -r -t "$SCRATCH_DIR/android/app/build/outputs/apk/debug/app-debug.apk"
-    "$ADB" -s "$serial" install -r -t "$SCRATCH_DIR/android/app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk"
+    "$ADB" -s "$serial" install -r -t "$injected_build_root/app/outputs/apk/debug/app-debug.apk"
+    "$ADB" -s "$serial" install -r -t "$injected_build_root/app/outputs/apk/androidTest/debug/app-debug-androidTest.apk"
 
     local output
     output="$("$ADB" -s "$serial" shell am instrument -w -r \
@@ -180,6 +185,7 @@ run_api35() {
 
 printf '== Build Android spike APKs ==\n'
 "$ANDROID_DIR/gradlew" --no-daemon "${GRADLE_PROXY_ARGS[@]}" \
+    --project-cache-dir "$CLIPSYNC_PROJECT_BUILD_ROOT/gradle-project-cache" \
     -p "$ANDROID_DIR" :app:assembleDebug :app:assembleDebugAndroidTest
 
 BADGING="$("$AAPT2" dump badging "$APP_APK")"

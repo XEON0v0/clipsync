@@ -5,11 +5,13 @@ set -euo pipefail
 umask 077
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+source "$ROOT_DIR/scripts/require-external-dev.sh"
+clipsync_require_external_dev "$ROOT_DIR"
 ANDROID_DIR="$ROOT_DIR/android"
 KEYSTORE_DIR="$ANDROID_DIR/keystore"
 KEYSTORE_FILE="$KEYSTORE_DIR/release.jks"
 PROPERTIES_FILE="$KEYSTORE_DIR/keystore.properties"
-DIST_FILE="$ROOT_DIR/dist/clipboard-sync.apk"
+DIST_FILE="$CLIPSYNC_RELEASE_OUTPUT_ROOT/clipboard-sync.apk"
 KEY_ALIAS="clipsync-release"
 
 cleanup() {
@@ -42,7 +44,7 @@ for candidate in \
 done
 [[ -n "$APKSIGNER_BIN" ]] || fail "apksigner not found in Android build-tools"
 
-mkdir -p "$KEYSTORE_DIR" "$ROOT_DIR/dist"
+mkdir -p "$KEYSTORE_DIR" "$CLIPSYNC_RELEASE_OUTPUT_ROOT"
 chmod 700 "$KEYSTORE_DIR"
 
 if [[ -f "$KEYSTORE_FILE" || -f "$PROPERTIES_FILE" ]]; then
@@ -86,7 +88,9 @@ export CLIPSYNC_STORE_PASSWORD CLIPSYNC_KEY_PASSWORD
     -alias "$KEY_ALIAS" >/dev/null
 printf 'PASS: JKS reopened with keytool\n'
 
-(cd "$ANDROID_DIR" && ./gradlew --no-daemon clean assembleRelease)
+(cd "$ANDROID_DIR" && ./gradlew --no-daemon \
+    --project-cache-dir "$CLIPSYNC_PROJECT_BUILD_ROOT/gradle-project-cache" \
+    clean assembleRelease)
 # With the external-storage build redirect active, the app build directory is
 # $CLIPSYNC_ANDROID_BUILD_ROOT/app instead of android/app/build.
 if [[ -n "${CLIPSYNC_ANDROID_BUILD_ROOT:-}" ]]; then

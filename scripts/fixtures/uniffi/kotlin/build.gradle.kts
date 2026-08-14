@@ -5,11 +5,14 @@ plugins {
 
 // Compile-and-run fixture: proves the generated Kotlin UniFFI binding compiles
 // against the JNA runtime and completes a live closed loop against a real
-// relay. The generated sources are copied into build/generated-binding by
+// relay. The generated sources are passed in from the external build root by
 // scripts/build-ffi.sh.
+val generatedBindingDir = providers.gradleProperty("generatedBindingDir")
+    .orElse(layout.buildDirectory.dir("generated-binding").map { it.asFile.absolutePath })
+
 sourceSets {
     main {
-        kotlin.srcDir("build/generated-binding")
+        kotlin.srcDir(generatedBindingDir)
     }
 }
 

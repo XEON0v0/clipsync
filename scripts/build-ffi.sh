@@ -15,17 +15,19 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+source "$ROOT_DIR/scripts/require-external-dev.sh"
+clipsync_require_external_dev "$ROOT_DIR"
 export PATH="$HOME/.cargo/bin:$PATH"
 export CARGO_HTTP_PROXY=""
 export RUSTUP_DIST_SERVER="${RUSTUP_DIST_SERVER:-https://mirrors.ustc.edu.cn/rust-static}"
 unset http_proxy https_proxy HTTP_PROXY HTTPS_PROXY ALL_PROXY all_proxy || true
 
-OUT_DIR="$ROOT_DIR/dist/ffi"
+OUT_DIR="$CLIPSYNC_RELEASE_OUTPUT_ROOT/ffi"
 GEN_DIR="$OUT_DIR/generated"
 ANDROID_GEN_DIR="$OUT_DIR/generated-android"
 HEADERS_DIR="$OUT_DIR/apple-headers"
 HOST_DIR="$OUT_DIR/host"
-DEBUG_LIB_DIR="$ROOT_DIR/target/debug"
+DEBUG_LIB_DIR="$CARGO_TARGET_DIR/debug"
 RELAY_PID=""
 ANDROID_UNVERIFIED=""
 
@@ -189,8 +191,8 @@ done
 # targets into one universal archive first.
 mkdir -p "$OUT_DIR/apple/universal"
 lipo -create \
-    "$ROOT_DIR/target/aarch64-apple-darwin/release/libclipboard_core.a" \
-    "$ROOT_DIR/target/x86_64-apple-darwin/release/libclipboard_core.a" \
+    "$CARGO_TARGET_DIR/aarch64-apple-darwin/release/libclipboard_core.a" \
+    "$CARGO_TARGET_DIR/x86_64-apple-darwin/release/libclipboard_core.a" \
     -output "$OUT_DIR/apple/universal/libclipboard_core.a"
 "$XCODEBUILD_BIN" -create-xcframework \
     -library "$OUT_DIR/apple/universal/libclipboard_core.a" -headers "$HEADERS_DIR" \
@@ -240,7 +242,7 @@ start_relay() {
     RELAY_MAILBOX="$(mktemp -d "${TMPDIR:-/tmp}/clipsync-relay-mailbox.XXXXXX")"
     RELAY_LOG="$(mktemp "${TMPDIR:-/tmp}/clipsync-relay-log.XXXXXX")"
     BIND_ADDR=127.0.0.1:0 DATA_DIR="$RELAY_DATA" MAILBOX_DIR="$RELAY_MAILBOX" \
-        "$ROOT_DIR/target/debug/clipsync-server" 2>"$RELAY_LOG" &
+        "$CARGO_TARGET_DIR/debug/clipsync-server" 2>"$RELAY_LOG" &
     RELAY_PID=$!
     local deadline=$((SECONDS + 15))
     until grep -q "listening on ws://" "$RELAY_LOG" 2>/dev/null; do
@@ -302,9 +304,11 @@ start_relay
 
 step "Kotlin host closed loop (JNA)"
 KOTLIN_FIXTURE="$ROOT_DIR/scripts/fixtures/uniffi/kotlin"
-mkdir -p "$KOTLIN_FIXTURE/build/generated-binding/uniffi/clipboard_core"
+KOTLIN_FIXTURE_BUILD="$CLIPSYNC_PROJECT_BUILD_ROOT/kotlin-fixture"
+KOTLIN_GENERATED_BINDING="$KOTLIN_FIXTURE_BUILD/generated-binding"
+mkdir -p "$KOTLIN_GENERATED_BINDING/uniffi/clipboard_core"
 cp "$GEN_DIR/uniffi/clipboard_core/clipboard_core.kt" \
-    "$KOTLIN_FIXTURE/build/generated-binding/uniffi/clipboard_core/clipboard_core.kt"
+    "$KOTLIN_GENERATED_BINDING/uniffi/clipboard_core/clipboard_core.kt"
 if [[ -z "${JAVA_HOME:-}" ]]; then
     for jdk in \
         "/Applications/IntelliJ IDEA.app/Contents/jbr/Contents/Home" \
@@ -320,6 +324,8 @@ export JAVA_TOOL_OPTIONS="-Dhttp.proxyHost= -Dhttp.proxyPort=80 -Dhttps.proxyHos
 KOTLIN_LOG="$(mktemp "${TMPDIR:-/tmp}/clipsync-kotlin-host.XXXXXX")"
 run_with_timeout 300 \
     "$ROOT_DIR/android/gradlew" --no-daemon -p "$KOTLIN_FIXTURE" ffiClosedLoop \
+    --project-cache-dir "$KOTLIN_FIXTURE_BUILD/gradle-project-cache" \
+    -PgeneratedBindingDir="$KOTLIN_GENERATED_BINDING" \
     -PrelayUrl="$RELAY_URL" -PffiLibraryPath="$DEBUG_LIB_DIR" 2>&1 | tee "$KOTLIN_LOG"
 grep -q "PASS: Kotlin host closed loop delivered live clip over UniFFI/JNA FFI" "$KOTLIN_LOG" \
     || fail "Kotlin host closed loop did not report success"

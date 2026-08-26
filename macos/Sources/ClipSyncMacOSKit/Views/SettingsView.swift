@@ -37,6 +37,7 @@ public struct SettingsView: View {
                     }
                 }
             }
+            ExclusionRulesView(settings: settings)
             if let error = model.lastError {
                 Section {
                     Text(error)

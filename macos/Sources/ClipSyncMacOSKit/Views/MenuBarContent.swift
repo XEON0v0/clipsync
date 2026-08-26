@@ -3,10 +3,12 @@ import SwiftUI
 
 public struct MenuBarContent: View {
     @ObservedObject private var model: AppModel
+    @ObservedObject private var settings: SettingsStore
     @Environment(\.openWindow) private var openWindow
 
     public init(model: AppModel) {
         self.model = model
+        self.settings = model.settings
     }
 
     public var body: some View {
@@ -34,6 +36,12 @@ public struct MenuBarContent: View {
         }
         Button("Settings...", systemImage: "gearshape") {
             SettingsWindowBridge.open()
+        }
+        Divider()
+        Toggle("Pause Sync", isOn: $settings.syncPaused)
+        if let intercepted = model.lastInterceptAt {
+            Text("Sensitive content blocked at \(intercepted.formatted(date: .omitted, time: .shortened))")
+                .foregroundStyle(.secondary)
         }
         Button("Quit", systemImage: "power") {
             model.shutdown {

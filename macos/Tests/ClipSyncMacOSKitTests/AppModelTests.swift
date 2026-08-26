@@ -214,10 +214,82 @@ final class AppModelTests: XCTestCase {
         XCTAssertEqual(model.loginItemStatusText, "On")
     }
 
+    func testOrdinaryLocalCopyIsStillSent() throws {
+        let core = FakeCoreService()
+        let clipboard = ModelFakeClipboard()
+        let spy = SpyInterceptNotifier()
+        let model = makeModel(core: core, clipboard: clipboard, interceptNotifier: spy)
+
+        clipboard.simulateUserCopy(.text("meeting notes"))
+        try model.monitor.poll()
+
+        XCTAssertEqual(core.sentPayloads, [.text("meeting notes")])
+        XCTAssertTrue(spy.reasons.isEmpty)
+        XCTAssertNil(model.lastInterceptAt)
+    }
+
+    func testMarkedSensitiveCopyIsBlockedAndNotified() throws {
+        let core = FakeCoreService()
+        let clipboard = ModelFakeClipboard()
+        let spy = SpyInterceptNotifier()
+        let model = makeModel(core: core, clipboard: clipboard, interceptNotifier: spy)
+
+        clipboard.markedSensitive = true
+        clipboard.simulateUserCopy(.text("site password"))
+        try model.monitor.poll()
+
+        XCTAssertTrue(core.sentPayloads.isEmpty)
+        XCTAssertEqual(spy.reasons, [.pasteboardMarker])
+        XCTAssertNotNil(model.lastInterceptAt)
+    }
+
+    func testBuiltinRuleCopyIsBlockedWithoutPasteboardMarker() throws {
+        let core = FakeCoreService()
+        let clipboard = ModelFakeClipboard()
+        let spy = SpyInterceptNotifier()
+        let model = makeModel(core: core, clipboard: clipboard, interceptNotifier: spy)
+
+        clipboard.simulateUserCopy(.text("otpauth://totp/Example?secret=JBSW"))
+        try model.monitor.poll()
+
+        XCTAssertTrue(core.sentPayloads.isEmpty)
+        XCTAssertEqual(spy.reasons, [.builtinRule("otpauth")])
+    }
+
+    func testUserRuleFromSettingsBlocks() throws {
+        let core = FakeCoreService()
+        let clipboard = ModelFakeClipboard()
+        let spy = SpyInterceptNotifier()
+        let model = makeModel(core: core, clipboard: clipboard, interceptNotifier: spy)
+        model.settings.sensitiveRules = [SensitiveRule(pattern: "hunter2", isRegex: false)]
+
+        clipboard.simulateUserCopy(.text("password is hunter2"))
+        try model.monitor.poll()
+
+        XCTAssertTrue(core.sentPayloads.isEmpty)
+        XCTAssertEqual(spy.reasons, [.userRule(0)])
+    }
+
+    func testPausedSyncDropsSilentlyWithoutNotification() throws {
+        let core = FakeCoreService()
+        let clipboard = ModelFakeClipboard()
+        let spy = SpyInterceptNotifier()
+        let model = makeModel(core: core, clipboard: clipboard, interceptNotifier: spy)
+        model.settings.syncPaused = true
+
+        clipboard.simulateUserCopy(.text("secret while paused"))
+        try model.monitor.poll()
+
+        XCTAssertTrue(core.sentPayloads.isEmpty)
+        XCTAssertTrue(spy.reasons.isEmpty)
+        XCTAssertNil(model.lastInterceptAt)
+    }
+
     private func makeModel(
         core: FakeCoreService = FakeCoreService(),
         clipboard: ModelFakeClipboard = ModelFakeClipboard(),
-        loginItem: FakeLoginItemController = FakeLoginItemController(status: .disabled)
+        loginItem: FakeLoginItemController = FakeLoginItemController(status: .disabled),
+        interceptNotifier: SpyInterceptNotifier = SpyInterceptNotifier()
     ) -> AppModel {
         let suite = "AppModelTests.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suite)!
@@ -229,6 +301,7 @@ final class AppModelTests: XCTestCase {
             clipboard: clipboard,
             core: core,
             loginItemController: loginItem,
+            interceptNotifier: interceptNotifier,
             startMonitoring: false
         )
     }
@@ -247,6 +320,7 @@ private final class FakeCoreService: CoreServicing, @unchecked Sendable {
     private(set) var appliedHistoryIDs: [String] = []
     private(set) var clearHistoryCount = 0
     private(set) var resetPairingCount = 0
+    private(set) var sentPayloads: [ClipboardPayload] = []
 
     func initialize(completion: @escaping @MainActor @Sendable (Result<Bool, CoreExecutionFailure>) -> Void) {
         MainActor.assumeIsolated { completion(initializeResult) }
@@ -295,6 +369,7 @@ private final class FakeCoreService: CoreServicing, @unchecked Sendable {
     }
 
     func send(_ payload: ClipboardPayload, completion: @escaping @MainActor @Sendable (Result<UInt64, CoreExecutionFailure>) -> Void) {
+        sentPayloads.append(payload)
         MainActor.assumeIsolated { completion(.success(1)) }
     }
 
@@ -350,5 +425,14 @@ private final class ModelFakeClipboard: ClipboardAccess {
     func simulateUserCopy(_ payload: ClipboardPayload) {
         self.payload = payload
         changeCount += 1
+    }
+}
+
+@MainActor
+private final class SpyInterceptNotifier: InterceptNotifying {
+    private(set) var reasons: [InterceptReason] = []
+
+    func notify(reason: InterceptReason) {
+        reasons.append(reason)
     }
 }

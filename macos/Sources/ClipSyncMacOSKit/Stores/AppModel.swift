@@ -25,6 +25,7 @@ public final class AppModel: ObservableObject, CoreCallbackSink {
     @Published public private(set) var pairingSAS: String?
     @Published public private(set) var history: [ClipboardHistoryEntry] = []
     @Published public private(set) var historyError: String?
+    @Published public private(set) var lastInterceptAt: Date?
     @Published public private(set) var loginItemStatus: LoginItemStatus
     @Published public private(set) var loginItemError: String?
 
@@ -32,10 +33,12 @@ public final class AppModel: ObservableObject, CoreCallbackSink {
     public let monitor: PasteboardMonitor
     private let core: any CoreServicing
     private let loginItemController: any LoginItemControlling
+    private let interceptNotifier: any InterceptNotifying
 
     public convenience init(
         settings: SettingsStore = SettingsStore(),
         clipboard: ClipboardAccess = SystemClipboard(),
+        interceptNotifier: any InterceptNotifying = SystemInterceptNotifier(),
         dataDirectory: String? = nil
     ) {
         let bridge = CoreCallbackBridge()
@@ -45,6 +48,7 @@ public final class AppModel: ObservableObject, CoreCallbackSink {
             clipboard: clipboard,
             core: CoreService(dataDirectory: directory, callbacks: bridge),
             loginItemController: LoginItemController(),
+            interceptNotifier: interceptNotifier,
             callbackBridge: bridge,
             startMonitoring: true
         )
@@ -55,6 +59,7 @@ public final class AppModel: ObservableObject, CoreCallbackSink {
         clipboard: ClipboardAccess,
         core: any CoreServicing,
         loginItemController: any LoginItemControlling,
+        interceptNotifier: any InterceptNotifying = SystemInterceptNotifier(),
         startMonitoring: Bool
     ) {
         self.init(
@@ -62,6 +67,7 @@ public final class AppModel: ObservableObject, CoreCallbackSink {
             clipboard: clipboard,
             core: core,
             loginItemController: loginItemController,
+            interceptNotifier: interceptNotifier,
             callbackBridge: nil,
             startMonitoring: startMonitoring
         )
@@ -72,6 +78,7 @@ public final class AppModel: ObservableObject, CoreCallbackSink {
         clipboard: ClipboardAccess,
         core: any CoreServicing,
         loginItemController: any LoginItemControlling,
+        interceptNotifier: any InterceptNotifying,
         callbackBridge: CoreCallbackBridge?,
         startMonitoring: Bool
     ) {
@@ -79,11 +86,12 @@ public final class AppModel: ObservableObject, CoreCallbackSink {
         monitor = PasteboardMonitor(clipboard: clipboard)
         self.core = core
         self.loginItemController = loginItemController
+        self.interceptNotifier = interceptNotifier
         loginItemStatus = loginItemController.status
         callbackBridge?.sink = self
 
-        monitor.onLocalChange = { [weak self] payload, _ in
-            self?.send(payload)
+        monitor.onLocalChange = { [weak self] payload, markedSensitive in
+            self?.handleLocalChange(payload, markedSensitive: markedSensitive)
         }
         monitor.onError = { [weak self] error in
             self?.showError(error.localizedDescription)
@@ -375,6 +383,25 @@ public final class AppModel: ObservableObject, CoreCallbackSink {
             case let .failure(error):
                 historyError = error.message
             }
+        }
+    }
+
+    /// 发送入口的拦截收口：blocked 内容不调 core.send、不落任何盘；
+    /// paused 是用户显式操作，静默丢弃，其余原因发通知。
+    private func handleLocalChange(_ payload: ClipboardPayload, markedSensitive: Bool) {
+        switch SensitiveContentFilter.evaluate(
+            paused: settings.syncPaused,
+            markedSensitive: markedSensitive,
+            payload: payload,
+            rules: settings.sensitiveRules
+        ) {
+        case .allow:
+            send(payload)
+        case .block(.paused):
+            break
+        case .block(let reason):
+            lastInterceptAt = Date()
+            interceptNotifier.notify(reason: reason)
         }
     }
 

@@ -31,6 +31,10 @@ public struct ExclusionRulesView: View {
         HStack {
             TextField("Keyword or regex", text: binding(for: rule))
                 .textFieldStyle(.roundedBorder)
+                .foregroundStyle(
+                    rule.isRegex && !SensitiveContentFilter.isValidRegex(rule.pattern)
+                        ? .red : .primary
+                )
             Toggle("Regex", isOn: regexBinding(for: rule))
                 .toggleStyle(.checkbox)
         }

@@ -130,6 +130,12 @@ final class FilterTests: XCTestCase {
         )
     }
 
+    func testIsValidRegexClassification() {
+        XCTAssertTrue(SensitiveContentFilter.isValidRegex("trunk\\d-OK"))
+        XCTAssertFalse(SensitiveContentFilter.isValidRegex("trunk(\\d-OK"))
+        XCTAssertTrue(SensitiveContentFilter.isValidRegex(""))
+    }
+
     func testEmptyUserPatternNeverMatches() {
         XCTAssertEqual(
             evaluate(payload: .text("anything"), rules: [SensitiveRule(pattern: "", isRegex: false)]),

@@ -1,4 +1,5 @@
 import Foundation
+import os
 
 /// 用户自定义排除规则：子串或正则，仅存本机。
 public struct SensitiveRule: Codable, Equatable, Identifiable {
@@ -99,6 +100,16 @@ public enum BuiltinSensitiveRules {
 /// 发送入口的敏感内容判定。纯逻辑、无依赖、不抛错；
 /// 判定异常（如非法正则）按不匹配处理，放行优先保同步可用性。
 public struct SensitiveContentFilter {
+    private static let logger = Logger(subsystem: "com.clipsync.macos", category: "sensitive-rules")
+
+    /// 纯语法校验：空串视为合法（空模式在 ruleMatches 中按永不匹配处理）。
+    public static func isValidRegex(_ pattern: String) -> Bool {
+        if pattern.isEmpty {
+            return true
+        }
+        return (try? NSRegularExpression(pattern: pattern)) != nil
+    }
+
     public static func evaluate(
         paused: Bool,
         markedSensitive: Bool,
@@ -131,6 +142,8 @@ public struct SensitiveContentFilter {
             return text.range(of: rule.pattern) != nil
         }
         guard let regex = try? NSRegularExpression(pattern: rule.pattern) else {
+            // 只记录规则本身（用户配置），绝不记录被评估的剪贴板文本。
+            Self.logger.warning("ignoring invalid user regex: \(rule.pattern, privacy: .public)")
             return false
         }
         return regex.firstMatch(in: text, range: NSRange(text.startIndex..., in: text)) != nil

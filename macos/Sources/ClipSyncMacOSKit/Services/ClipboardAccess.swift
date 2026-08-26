@@ -37,22 +37,36 @@ public final class SystemClipboard: ClipboardAccess {
     ]
 
     public func readPayload() throws -> ReadResult? {
+        // Mixed-generation read pairs a stale marker with fresh content and fails open, so a changed changeCount means skip.
+        let entryChangeCount = pasteboard.changeCount
         let markedSensitive = (pasteboard.types ?? []).contains {
             Self.sensitiveMarkerTypes.contains($0.rawValue)
         }
+        guard pasteboard.changeCount == entryChangeCount else {
+            return nil
+        }
         if let png = pasteboard.data(forType: .png) {
+            guard pasteboard.changeCount == entryChangeCount else {
+                return nil
+            }
             return ReadResult(
                 payload: try ClipboardImageCodec.payload(fromEncodedImage: png, enforceEncodedLimit: true),
                 markedSensitive: markedSensitive
             )
         }
         if let tiff = pasteboard.data(forType: .tiff) {
+            guard pasteboard.changeCount == entryChangeCount else {
+                return nil
+            }
             return ReadResult(
                 payload: try ClipboardImageCodec.payload(fromEncodedImage: tiff, enforceEncodedLimit: false),
                 markedSensitive: markedSensitive
             )
         }
         if let text = pasteboard.string(forType: .string) {
+            guard pasteboard.changeCount == entryChangeCount else {
+                return nil
+            }
             return ReadResult(payload: .text(text), markedSensitive: markedSensitive)
         }
         return nil

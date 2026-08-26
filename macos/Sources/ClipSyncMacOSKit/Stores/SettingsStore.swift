@@ -12,6 +12,8 @@ public enum SettingsError: LocalizedError, Equatable {
 public final class SettingsStore: ObservableObject {
     private enum Keys {
         static let serverURL = "serverURL"
+        static let syncPaused = "syncPaused"
+        static let sensitiveRules = "sensitiveRules"
     }
 
     private let defaults: UserDefaults
@@ -22,9 +24,30 @@ public final class SettingsStore: ObservableObject {
         }
     }
 
+    @Published public var syncPaused: Bool {
+        didSet {
+            defaults.set(syncPaused, forKey: Keys.syncPaused)
+        }
+    }
+
+    @Published public var sensitiveRules: [SensitiveRule] {
+        didSet {
+            if let data = try? JSONEncoder().encode(sensitiveRules) {
+                defaults.set(data, forKey: Keys.sensitiveRules)
+            }
+        }
+    }
+
     public init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
         serverURL = defaults.string(forKey: Keys.serverURL) ?? ""
+        syncPaused = defaults.bool(forKey: Keys.syncPaused)
+        if let data = defaults.data(forKey: Keys.sensitiveRules),
+           let decoded = try? JSONDecoder().decode([SensitiveRule].self, from: data) {
+            sensitiveRules = decoded
+        } else {
+            sensitiveRules = []
+        }
     }
 
     public func validatedServerURL() throws -> URL {

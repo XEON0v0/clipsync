@@ -20,7 +20,7 @@ public final class PasteboardMonitor: NSObject {
     private var disconnectBaseline: Int?
     private var timer: Timer?
 
-    public var onLocalChange: ((ClipboardPayload) -> Void)?
+    public var onLocalChange: ((ClipboardPayload, _ markedSensitive: Bool) -> Void)?
     public var onError: ((Error) -> Void)?
 
     public init(clipboard: ClipboardAccess) {
@@ -45,16 +45,17 @@ public final class PasteboardMonitor: NSObject {
         let changeCount = clipboard.changeCount
         guard changeCount != observedChangeCount else { return }
         observedChangeCount = changeCount
-        guard let payload = try clipboard.readPayload() else {
+        guard let result = try clipboard.readPayload() else {
             ownershipToken = nil
             return
         }
+        let payload = result.payload
         if ownershipToken == OwnershipToken(changeCount: changeCount, semanticDigest: payload.semanticDigest) {
             ownershipToken = nil
             return
         }
         ownershipToken = nil
-        onLocalChange?(payload)
+        onLocalChange?(payload, result.markedSensitive)
     }
 
     public func markDisconnected() {

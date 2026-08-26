@@ -82,7 +82,7 @@ public final class AppModel: ObservableObject, CoreCallbackSink {
         loginItemStatus = loginItemController.status
         callbackBridge?.sink = self
 
-        monitor.onLocalChange = { [weak self] payload in
+        monitor.onLocalChange = { [weak self] payload, _ in
             self?.send(payload)
         }
         monitor.onError = { [weak self] error in

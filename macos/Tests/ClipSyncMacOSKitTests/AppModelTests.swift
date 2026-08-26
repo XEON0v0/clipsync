@@ -332,9 +332,10 @@ private enum TestFailure: Error {
 private final class ModelFakeClipboard: ClipboardAccess {
     private(set) var changeCount = 0
     private(set) var payload: ClipboardPayload?
+    var markedSensitive = false
 
-    func readPayload() throws -> ClipboardPayload? {
-        payload
+    func readPayload() throws -> ReadResult? {
+        payload.map { ReadResult(payload: $0, markedSensitive: markedSensitive) }
     }
 
     func write(_ payload: ClipboardPayload, ifUnchanged expected: Int?) throws -> Int? {
@@ -344,5 +345,10 @@ private final class ModelFakeClipboard: ClipboardAccess {
         self.payload = payload
         changeCount += 1
         return changeCount
+    }
+
+    func simulateUserCopy(_ payload: ClipboardPayload) {
+        self.payload = payload
+        changeCount += 1
     }
 }

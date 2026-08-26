@@ -9,7 +9,7 @@ final class PasteboardMonitorTests: XCTestCase {
         let clipboard = FakeClipboard()
         let monitor = PasteboardMonitor(clipboard: clipboard)
         var sent: [ClipboardPayload] = []
-        monitor.onLocalChange = { sent.append($0) }
+        monitor.onLocalChange = { payload, _ in sent.append(payload) }
 
         clipboard.simulateUserCopy(.text("hello"))
         try monitor.poll()
@@ -22,7 +22,7 @@ final class PasteboardMonitorTests: XCTestCase {
         let monitor = PasteboardMonitor(clipboard: clipboard)
         let image = ClipboardPayload.image(png: Data([1, 2, 3]), semanticDigest: "image-digest")
         var sent: [ClipboardPayload] = []
-        monitor.onLocalChange = { sent.append($0) }
+        monitor.onLocalChange = { payload, _ in sent.append(payload) }
 
         XCTAssertEqual(try monitor.applyRemote(image, mailbox: false), .applied)
         try monitor.poll()
@@ -43,7 +43,7 @@ final class PasteboardMonitorTests: XCTestCase {
             enforceEncodedLimit: true
         )
         var sent: [ClipboardPayload] = []
-        monitor.onLocalChange = { sent.append($0) }
+        monitor.onLocalChange = { payload, _ in sent.append(payload) }
 
         XCTAssertEqual(try monitor.applyRemote(payload, mailbox: false), .applied)
         XCTAssertNotNil(pasteboard.data(forType: .png))
@@ -74,6 +74,40 @@ final class PasteboardMonitorTests: XCTestCase {
 
         XCTAssertEqual(try monitor.applyRemote(.text("mailbox"), mailbox: true), .deferred)
         XCTAssertEqual(clipboard.payload, .text("racing local copy"))
+    }
+
+    func testMarkedSensitiveFlagIsPassedThroughToLocalChange() throws {
+        let clipboard = FakeClipboard()
+        let monitor = PasteboardMonitor(clipboard: clipboard)
+        var received: [(payload: ClipboardPayload, markedSensitive: Bool)] = []
+        monitor.onLocalChange = { payload, marked in received.append((payload, marked)) }
+
+        clipboard.markedSensitive = true
+        clipboard.simulateUserCopy(.text("pw"))
+        try monitor.poll()
+
+        XCTAssertEqual(received.count, 1)
+        XCTAssertEqual(received.first?.payload, .text("pw"))
+        XCTAssertEqual(received.first?.markedSensitive, true)
+    }
+
+    func testSystemClipboardReportsConcealedTypeMarker() throws {
+        let pasteboard = NSPasteboard.withUniqueName()
+        defer { pasteboard.releaseGlobally() }
+        let clipboard = SystemClipboard(pasteboard: pasteboard)
+
+        pasteboard.clearContents()
+        XCTAssertTrue(pasteboard.setString("secret", forType: .string))
+        XCTAssertTrue(pasteboard.setData(Data([0]), forType: NSPasteboard.PasteboardType("org.nspasteboard.ConcealedType")))
+        let concealed = try clipboard.readPayload()
+        XCTAssertEqual(concealed?.payload, .text("secret"))
+        XCTAssertTrue(concealed?.markedSensitive ?? false)
+
+        pasteboard.clearContents()
+        XCTAssertTrue(pasteboard.setString("plain", forType: .string))
+        let plain = try clipboard.readPayload()
+        XCTAssertEqual(plain?.payload, .text("plain"))
+        XCTAssertFalse(plain?.markedSensitive ?? true)
     }
 
     private func makePNG() throws -> Data {
@@ -108,10 +142,11 @@ final class PasteboardMonitorTests: XCTestCase {
 private final class FakeClipboard: ClipboardAccess {
     private(set) var changeCount = 0
     private(set) var payload: ClipboardPayload?
+    var markedSensitive = false
     var overwriteBeforeConditionalWrite: ClipboardPayload?
 
-    func readPayload() throws -> ClipboardPayload? {
-        payload
+    func readPayload() throws -> ReadResult? {
+        payload.map { ReadResult(payload: $0, markedSensitive: markedSensitive) }
     }
 
     func write(_ payload: ClipboardPayload, ifUnchanged expected: Int?) throws -> Int? {

@@ -35,3 +35,16 @@
 ## Windows（Parallels VM）
 - [ ] VM 内 `cargo build --release -p clipsync-desktop`（MSVC 工具链）通过
 - [ ] 重复上述全部清单（至少配对、双向文本、图片、托盘、自启动）
+
+## Sensitive content interception (2026-08)
+
+- Copy a password from 1Password / Keychain (marks `org.nspasteboard.ConcealedType`):
+  - no sync to Android, no history entry, macOS notification "Sensitive content blocked".
+- `printf -- '-----BEGIN RSA PRIVATE KEY-----' | pbcopy`: blocked by built-in rule.
+- `printf 'otpauth://totp/x?secret=ABC' | pbcopy`: blocked by built-in rule.
+- `printf 'normal text' | pbcopy`: syncs to Android as before.
+- `printf 'hunter2' | pbcopy` with custom rule `hunter2` added in Settings → Exclusions: blocked.
+- Menu bar → "Pause Sync" checked: any copy stays local silently (no notification); Android receiving still works.
+- Two sensitive copies within 5 seconds: only one notification.
+- Deny notification permission on first intercept: no crash; menu bar still shows the "Sensitive content blocked at ..." line.
+- Settings → Exclusions: add a custom rule, then delete it (row swipe/edit affordance may be absent on macOS Form — if deletion has no visible affordance, record that as a finding in your report instead of failing).

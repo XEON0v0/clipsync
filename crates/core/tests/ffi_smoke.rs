@@ -232,15 +232,22 @@ fn ffi_smoke_pairing_closed_loop_live() {
     let texts = wait_live_texts(&cb_b, 1);
     assert_eq!(texts, ["hello host"]);
 
+    let reverse_seq = b
+        .send_text("hello from claiming host".to_owned())
+        .expect("reverse send succeeds");
+    assert_eq!(reverse_seq, 1, "each sender owns its sequence namespace");
+    let reverse_texts = wait_live_texts(&cb_a, 1);
+    assert_eq!(reverse_texts, ["hello from claiming host"]);
+
     let hash = text_hash("hello host");
     assert!(b.is_echo(hash.clone()), "receiver registers applied echo");
     assert!(a.is_echo(hash), "sender registers sent echo");
     assert!(!b.is_echo(text_hash("other")), "unknown hash is not an echo");
 
-    let history_b = wait_until(|| b.history().ok().filter(|items| !items.is_empty()));
-    assert_eq!(history_b.len(), 1);
-    let history_a = a.history().expect("sender history");
-    assert_eq!(history_a.len(), 1);
+    let history_b = wait_until(|| b.history().ok().filter(|items| items.len() == 2));
+    assert_eq!(history_b.len(), 2);
+    let history_a = wait_until(|| a.history().ok().filter(|items| items.len() == 2));
+    assert_eq!(history_a.len(), 2);
 
     a.shutdown().expect("a shuts down");
     b.shutdown().expect("b shuts down");

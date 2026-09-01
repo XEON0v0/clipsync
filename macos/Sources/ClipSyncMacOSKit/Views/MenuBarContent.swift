@@ -21,21 +21,25 @@ public struct MenuBarContent: View {
         } else if model.connectionState == .unpaired || model.connectionState == .failed {
             Button("Pair Device", systemImage: "qrcode") {
                 model.beginPairing()
+                Self.activateApp()
                 openWindow(id: "pairing")
             }
             .disabled(model.settings.serverURL.isEmpty)
         } else if model.connectionState == .waitingForPeer || model.connectionState == .sasReady {
             Button("Show Pairing", systemImage: "qrcode") {
+                Self.activateApp()
                 openWindow(id: "pairing")
             }
         }
         Divider()
         Button("History", systemImage: "clock.arrow.circlepath") {
             model.refreshHistory()
+            Self.activateApp()
             openWindow(id: "history")
         }
         Button("Settings...", systemImage: "gearshape") {
-            SettingsWindowBridge.open()
+            Self.activateApp()
+            openWindow(id: "settings")
         }
         Divider()
         Toggle("Pause Sync", isOn: $settings.syncPaused)
@@ -64,13 +68,5 @@ public struct MenuBarContent: View {
         case .failed, .disconnected: "exclamationmark.circle"
         default: "circle"
         }
-    }
-}
-
-@MainActor
-private enum SettingsWindowBridge {
-    static func open() {
-        NSApplication.shared.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil)
-        NSApplication.shared.activate(ignoringOtherApps: true)
     }
 }

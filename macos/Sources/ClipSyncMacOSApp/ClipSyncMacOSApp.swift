@@ -19,8 +19,9 @@ struct ClipSyncMacOSApp: App {
             HistoryView(model: model)
         }
 
-        Settings {
+        Window("ClipboardSync Settings", id: "settings") {
             SettingsView(model: model)
         }
+        .windowResizability(.contentSize)
     }
 }

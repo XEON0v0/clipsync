@@ -30,6 +30,7 @@ rm -rf "$APP_BUNDLE"
 mkdir -p "$APP_BUNDLE/Contents/MacOS" "$APP_BUNDLE/Contents/Resources"
 cp "$BIN_DIR/ClipSyncMacOS" "$APP_BINARY"
 cp "$MACOS_DIR/Support/Info.plist" "$APP_BUNDLE/Contents/Info.plist"
+cp "$MACOS_DIR/Support/AppIcon.icns" "$APP_BUNDLE/Contents/Resources/AppIcon.icns"
 chmod +x "$APP_BINARY"
 
 /usr/bin/codesign --force --sign - "$APP_BUNDLE"

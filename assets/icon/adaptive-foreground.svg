@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="432" height="432" viewBox="0 0 432 432">
+  <defs>
+    <linearGradient id="clipgrad" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#4C8DFF"/>
+      <stop offset="1" stop-color="#8B5CF6"/>
+    </linearGradient>
+  </defs>
+  <g transform="translate(216 216) scale(0.38) translate(-512 -512)">
+    <!-- sync ring -->
+    <g fill="none" stroke="#FFFFFF" stroke-opacity="0.95" stroke-width="52" stroke-linecap="round">
+      <path d="M 182.0 453.8 A 335 335 0 0 1 842.0 453.8"/>
+      <path d="M 842.0 570.2 A 335 335 0 0 1 182.0 570.2"/>
+    </g>
+    <path d="M 854.2 521.1 L 791.7 452.0 L 889.0 434.6 Z" fill="#FFFFFF" fill-opacity="0.95"/>
+    <path d="M 169.8 503.1 L 232.4 571.9 L 135.1 589.5 Z" fill="#FFFFFF" fill-opacity="0.95"/>
+
+    <!-- clipboard board -->
+    <rect x="332" y="272" width="360" height="480" rx="34" fill="#FFFFFF"/>
+
+    <!-- clip -->
+    <rect x="412" y="232" width="200" height="100" rx="42" fill="url(#clipgrad)"/>
+    <circle cx="512" cy="278" r="19" fill="#FFFFFF"/>
+
+    <!-- content lines -->
+    <g fill="#C9D6F2">
+      <rect x="392" y="424" width="240" height="26" rx="13"/>
+      <rect x="392" y="512" width="240" height="26" rx="13"/>
+      <rect x="392" y="600" width="150" height="26" rx="13"/>
+    </g>
+  </g>
+</svg>

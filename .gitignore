@@ -37,3 +37,10 @@ keystore.properties
 .env.*
 !.env.example
 .env.local
+
+# Unfinished cross-platform desktop app is parked locally and not published.
+/crates/desktop/
+/scripts/build-desktop.sh
+/docs/desktop-verification-checklist.md
+/docs/superpowers/plans/2026-08-11-desktop-app.md
+/docs/superpowers/specs/2026-08-11-desktop-app-design.md

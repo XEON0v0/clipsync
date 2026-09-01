@@ -6,7 +6,7 @@ The machine-wide policy in `~/.codex/AGENTS.md` applies first. This workspace
 keeps every dependency store, emulator/simulator data set, build, test result,
 temporary file and generated intermediate on the external development volume.
 The exFAT `UH100` host contains the APFS sparse bundle at
-`/Volumes/UH100/ClipSyncDev.sparsebundle`; development data must never be
+`/Volumes/UH100/DevDisk.sparsebundle`; development data must never be
 written directly to exFAT.
 
 Before installing dependencies, building, testing, running Android emulators,
@@ -19,7 +19,7 @@ source scripts/external-dev-env.zsh
 [[ "$CLIPSYNC_EXTERNAL_LINKS_READY" == 1 ]]
 ```
 
-The helper mounts `/Volumes/ClipSyncDev` when possible and configures:
+The helper mounts `/Volumes/DevDisk` when possible and configures:
 
 - Android SDK, NDK, and AVD storage
 - Gradle user home
@@ -64,7 +64,7 @@ repository helper adds workspace-specific paths and link checks.
   "system-images;android-<N>;google_apis;arm64-v8a" --device pixel_2`.
 - Colima's daemon is configured on the external volume with Docker Hub
   registry mirrors (daocloud/1ms/xuanyuan/dockerproxy) and mounts
-  `/Volumes/ClipSyncDev` writable so compose bind-mounts (e.g. the local
+  `/Volumes/DevDisk` writable so compose bind-mounts (e.g. the local
   Caddyfile in `live-smoke.sh`) work from external-volume checkouts.
 - When Docker builds crawl in China, export
   `CARGO_REGISTRY_CONFIG=deploy/cargo-config.rsproxy.toml` so the pinned

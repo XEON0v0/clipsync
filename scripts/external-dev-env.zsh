@@ -57,7 +57,7 @@ if [[ "$CLIPSYNC_EXTERNAL_READY" == 1 ]]; then
     )
     export JAVA_TOOL_OPTIONS="${(j: :)clipsync_preserved_java_options}"
 
-    typeset clipsync_framework_target="$CLIPSYNC_DEV_VOLUME/ClipSyncBuild/Frameworks"
+    typeset clipsync_framework_target="$CLIPSYNC_DEV_VOLUME/Builds/Frameworks"
     typeset clipsync_framework_link="$clipsync_workspace_root/macos/Frameworks"
 
     /bin/mkdir -p "$clipsync_framework_target"
